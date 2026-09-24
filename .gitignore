@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.output/
+.wxt/
+.env
+*.log
+certs/*
+!certs/.gitkeep
+.DS_Store

@@ -1,0 +1,32 @@
+# Live AI: Asterisk ARI + AudioSocket -> AssemblyAI -> transcript WebSocket for the Chrome extension.
+#   cp .env.example .env   # fill in ARI / AssemblyAI / network settings
+#   docker compose up -d --build
+#   docker compose logs -f live-ai
+services:
+  live-ai:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: live-ai-server:latest
+    container_name: live-ai
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Fixed binds inside the container; publish ports are configured below.
+      UI_BIND: 0.0.0.0
+      UI_PORT: "8765"
+      AUDIOSOCKET_BIND: 0.0.0.0:9092
+    ports:
+      # Chrome extension -> ws://<host>:${UI_PUBLISH_PORT}/ui
+      - "${UI_PUBLISH_PORT:-8765}:8765"
+      # Asterisk -> AudioSocket TCP. AUDIOSOCKET_ADVERTISE_HOST must be <this host's IP>:${AUDIOSOCKET_PUBLISH_PORT}
+      - "${AUDIOSOCKET_PUBLISH_PORT:-9092}:9092"
+    volumes:
+      # Optional: CA of the PBX's TLS certificate, referenced as ARI_CA_CERT=/certs/<file>
+      - ./certs:/certs:ro
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
