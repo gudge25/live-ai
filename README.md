@@ -25,6 +25,18 @@ No dialplan changes are required.
 
 ## Quick start
 
+With `make` (run `make` alone for the full list):
+
+```bash
+make env                                  # .env from .env.example with a generated UI_TOKEN
+make up && make logs-pretty               # build + start the service, follow readable logs
+make tunnel PBX_SSH=root@<pbx>            # only when running behind NAT (see below)
+make ext-build                            # build the extension, then Load unpacked / Reload in Chrome
+make check                                # lint + typecheck + tests
+```
+
+Or by hand:
+
 ```bash
 cp .env.example .env              # ARI_*, ASSEMBLYAI_API_KEY, AUDIOSOCKET_ADVERTISE_HOST, UI_TOKEN
 docker compose up -d --build
