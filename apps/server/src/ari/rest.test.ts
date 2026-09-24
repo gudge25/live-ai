@@ -1,24 +1,25 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { AriHttpError, AriRest } from './rest.js';
+import { AriHttpError, AriRest, AriTimeoutError } from './rest.js';
 
 let server: Server;
 let base: string;
 let requests: { method: string; url: string; auth?: string }[] = [];
-let reply: (req: IncomingMessage) => { status: number; body?: unknown } = () => ({ status: 200, body: {} });
+let reply: (req: IncomingMessage) => { status: number; body?: unknown } | 'hang' = () => ({ status: 200, body: {} });
 
 beforeAll(async () => {
   server = createServer((req, res) => {
     requests.push({ method: req.method!, url: req.url!, auth: req.headers.authorization });
     const r = reply(req);
+    if (r === 'hang') return; // never answer, like a PBX blocked on a channel lock
     res.writeHead(r.status, { 'content-type': 'application/json' });
     res.end(r.body === undefined ? '' : JSON.stringify(r.body));
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
-afterAll(() => new Promise<void>((r) => server.close(() => r())));
+afterAll(() => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }));
 beforeEach(() => {
   requests = [];
   reply = () => ({ status: 200, body: {} });
@@ -80,6 +81,14 @@ describe('AriRest', () => {
   it('returns undefined for missing channel variable', async () => {
     reply = () => ({ status: 404, body: { message: 'not found' } });
     await expect(client().getChannelVar('c', 'BRIDGEPEER')).resolves.toBeUndefined();
+  });
+
+  it('times out a request the PBX never answers', async () => {
+    reply = () => 'hang';
+    const c = new AriRest({ url: base, user: 'u', password: 'p', app: 'live-ai', requestTimeoutMs: 100 });
+    const t0 = Date.now();
+    await expect(c.snoopChannel('1695.1', { snoopId: 's', spy: 'out' })).rejects.toBeInstanceOf(AriTimeoutError);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 
   it('throws AriHttpError with status on failure', async () => {

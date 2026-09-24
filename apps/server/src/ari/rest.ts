@@ -10,6 +10,19 @@ export interface AriConnectionOptions {
   app: string;
   caCertPath?: string;
   tlsInsecure?: boolean;
+  /** Per-request timeout; a PBX that never answers must not stall the service. */
+  requestTimeoutMs?: number;
+}
+
+export class AriTimeoutError extends Error {
+  constructor(
+    readonly method: string,
+    readonly path: string,
+    readonly timeoutMs: number,
+  ) {
+    super(`ARI ${method} ${path} timed out after ${timeoutMs} ms`);
+    this.name = 'AriTimeoutError';
+  }
 }
 
 export class AriHttpError extends Error {
@@ -54,9 +67,11 @@ export class AriRest implements AriApi {
   private readonly base: string;
   private readonly auth: string;
   private readonly dispatcher?: Dispatcher;
+  private readonly timeoutMs: number;
 
   constructor(opts: AriConnectionOptions) {
     this.app = opts.app;
+    this.timeoutMs = opts.requestTimeoutMs ?? 5000;
     this.base = `${opts.url.replace(/\/+$/, '')}/ari`;
     this.auth = `Basic ${Buffer.from(`${opts.user}:${opts.password}`).toString('base64')}`;
     if (this.base.startsWith('https:') && (opts.caCertPath || opts.tlsInsecure)) {
@@ -68,13 +83,23 @@ export class AriRest implements AriApi {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) if (v !== undefined) qs.set(k, String(v));
     const url = `${this.base}${path}${qs.size ? `?${qs}` : ''}`;
-    const res = await fetch(url, {
-      method,
-      headers: { authorization: this.auth, accept: 'application/json' },
-      // @ts-expect-error undici dispatcher is supported by Node's fetch
-      dispatcher: this.dispatcher,
-    });
-    const text = await res.text();
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { authorization: this.auth, accept: 'application/json' },
+        signal: AbortSignal.timeout(this.timeoutMs),
+        // @ts-expect-error undici dispatcher is supported by Node's fetch
+        dispatcher: this.dispatcher,
+      });
+      text = await res.text();
+    } catch (e) {
+      if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+        throw new AriTimeoutError(method, path, this.timeoutMs);
+      }
+      throw e;
+    }
     if (!res.ok) throw new AriHttpError(res.status, method, path, text);
     return (text ? JSON.parse(text) : undefined) as T;
   }
