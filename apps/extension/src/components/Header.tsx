@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { displayParty } from '../lib/party';
 import type { SessionView } from '../lib/reducer';
 import type { ConnectionState } from '../lib/socket';
 
@@ -21,7 +22,7 @@ interface Props {
 export function Header({ conn, sessions, selected, onSelect, onSettings }: Props) {
   const c = CONN_STYLE[conn.state];
   const info = selected?.info;
-  const remote = info ? info.remote.name || info.remote.number || 'Unknown' : null;
+  const remote = info ? displayParty(info.remote) : null;
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800">
@@ -30,10 +31,10 @@ export function Header({ conn, sessions, selected, onSelect, onSettings }: Props
         <div className="min-w-0 flex-1">
           {info ? (
             <>
-              <div className="truncate text-sm font-semibold">{remote}</div>
+              <div className="truncate text-sm font-semibold">{remote?.title}</div>
               <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                 <span>ext {info.extension}</span>
-                {info.remote.name && info.remote.number && <span>· {info.remote.number}</span>}
+                {remote?.subtitle && <span>· {remote.subtitle}</span>}
                 <span>·</span>
                 <Duration start={info.startedAt} end={info.endedAt} />
               </div>
@@ -67,7 +68,7 @@ export function Header({ conn, sessions, selected, onSelect, onSettings }: Props
               }`}
             >
               {s.info.state === 'active' && <span className="mr-1 inline-block size-1.5 rounded-full bg-emerald-400" />}
-              {s.info.extension} ↔ {s.info.remote.number || s.info.remote.name || '?'}
+              {s.info.extension} ↔ {displayParty(s.info.remote).title}
             </button>
           ))}
         </nav>

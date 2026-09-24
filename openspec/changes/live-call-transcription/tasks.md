@@ -7,7 +7,7 @@
 - [x] 1.3 Реалізувати завантаження та валідацію конфігу з env (D8), маскування секретів у логах; перевірити тестом, що відсутній `ARI_URL` дає зрозумілу помилку, а пароль не потрапляє в лог
 - [x] 1.4 Додати `.env.example` і `docs/asterisk-setup.md` (http.conf TLS, ari.conf, модулі); перевірити, що файли є і всі змінні з конфігу задокументовані
 
-- [ ] 1.5 Spike на реальному Asterisk 18: через `curl` створити snoop на тестовому дзвінку + `externalMedia` (`encapsulation=audiosocket&transport=tcp&format=slin&data=<uuid>`) + mixing bridge і прийняти аудіо простим TCP-слухачем; зафіксувати в design.md, чи працює шлях D3, чи потрібен fallback через `Local`-канал
+- [x] 1.5 Spike на реальному Asterisk 18: через `curl` створити snoop на тестовому дзвінку + `externalMedia` (`encapsulation=audiosocket&transport=tcp&format=slin&data=<uuid>`) + mixing bridge і прийняти аудіо простим TCP-слухачем; зафіксувати в design.md, чи працює шлях D3, чи потрібен fallback через `Local`-канал
 
 ## 2. ARI-клієнт і моніторинг номерів
 
@@ -47,5 +47,5 @@
 ## 7. Наскрізна перевірка і розгортання
 
 - [x] 7.1 Dockerfile / systemd unit для сервера; перевірити запуск контейнера з `.env`
-- [ ] 7.2 E2E на тестовому Asterisk: дзвінок на 222 → у вікні з'являються репліки обох сторін; після hangup у `asterisk -rx "core show channels"` і `bridge show all` немає `liveai-*` ресурсів
+- [x] 7.2 E2E на тестовому Asterisk: дзвінок на 222 → у вікні з'являються репліки обох сторін; після hangup у `asterisk -rx "core show channels"` і `bridge show all` немає `liveai-*` ресурсів
 - [ ] 7.3 Перевірити, що учасники дзвінка нічого не чують і розмова не переривається при зупинці сервісу посеред дзвінка
