@@ -36,7 +36,7 @@ const EnvSchema = z.object({
 
   // --- AssemblyAI ---
   ASSEMBLYAI_API_KEY: z.string().min(1, 'ASSEMBLYAI_API_KEY is required'),
-  AAI_SPEECH_MODEL: z.string().default('universal-3-5-pro'),
+  AAI_SPEECH_MODEL: z.string().default('universal-streaming-english'),
   AAI_LANGUAGE_CODES: list.default(['en']),
   AAI_KEYTERMS: list.default([]),
   AAI_DUAL_CHANNEL: bool.default(false),
