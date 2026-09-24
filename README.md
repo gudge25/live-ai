@@ -21,6 +21,7 @@ No dialplan changes are required.
 | `apps/extension` | Chrome MV3 extension (WXT + React + Tailwind) — see its README |
 | `packages/shared` | Event contract (zod schemas) shared by server and extension |
 | `docs/asterisk-setup.md` | PBX setup, networking, test checklist, troubleshooting |
+| `REQUIREMENTS.md` | Server spec, ports, network and running costs |
 | `openspec/` | Specs, design and tasks (OpenSpec change `live-call-transcription`) |
 
 ## Quick start
