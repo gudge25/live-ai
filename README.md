@@ -1,4 +1,6 @@
 # Live AI — live call transcription for Asterisk
+<img width="387" height="561" alt="image" src="https://github.com/user-attachments/assets/2673d470-69c9-4793-9178-cd42fcb28328" />
+
 
 Watches configured extensions (e.g. `222`) on an Asterisk PBX over ARI (WSS). When one of them is in a conversation, it taps the call listen-only (snoop + AudioSocket via ARI `externalMedia`), streams each party to AssemblyAI Universal-Streaming, and pushes the live dialog to a Chrome extension (side panel / floating window).
 
