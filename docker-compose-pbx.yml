@@ -1,7 +1,7 @@
 # Live AI running on the SAME VM as Asterisk, reachable from your PC's browser.
 #   cp .env.example .env
-#     ARI_URL=https://127.0.0.1:8089            # Asterisk is local
-#     AUDIOSOCKET_ADVERTISE_HOST=127.0.0.1:9092  # Asterisk is local
+#     ARI_URL=https://host.docker.internal:8089  # container -> host's TLS ARI (tlsbindaddr 0.0.0.0:8089)
+#     AUDIOSOCKET_ADVERTISE_HOST=127.0.0.1:9092   # Asterisk (on the host) -> container, same VM
 #   docker compose -f docker-compose-pbx.yml up -d --build
 #   docker compose -f docker-compose-pbx.yml logs -f live-ai
 #
@@ -29,6 +29,10 @@ services:
       UI_BIND: 0.0.0.0
       UI_PORT: "8765"
       AUDIOSOCKET_BIND: 0.0.0.0:9092
+    extra_hosts:
+      # Inside the container, 127.0.0.1 is the container itself, not the host —
+      # this lets ARI_URL reach the host's TLS ARI listener (0.0.0.0:8089).
+      - "host.docker.internal:host-gateway"
     ports:
       # Your PC's browser -> ws://<VM IP>:${UI_PUBLISH_PORT}/ui
       - "${UI_PUBLISH_PORT:-8765}:8765"
