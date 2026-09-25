@@ -1,6 +1,8 @@
 # Live AI running on the SAME VM as Asterisk, reachable from your PC's browser.
 #   cp .env.example .env
-#     ARI_URL=https://host.docker.internal:8089  # container -> host's TLS ARI (tlsbindaddr 0.0.0.0:8089)
+#     ARI_URL=https://<PBX_CERT_HOSTNAME>:8089   # e.g. pbx.gixo.co.uk — must match the ARI TLS cert's
+#                                                  # CN/SAN, or Node rejects it on hostname mismatch even
+#                                                  # with the right CA. Mapped below to the host gateway.
 #     AUDIOSOCKET_ADVERTISE_HOST=127.0.0.1:9092   # Asterisk (on the host) -> container, same VM
 #   docker compose -f docker-compose-pbx.yml up -d --build
 #   docker compose -f docker-compose-pbx.yml logs -f live-ai
@@ -30,9 +32,11 @@ services:
       UI_PORT: "8765"
       AUDIOSOCKET_BIND: 0.0.0.0:9092
     extra_hosts:
-      # Inside the container, 127.0.0.1 is the container itself, not the host —
-      # this lets ARI_URL reach the host's TLS ARI listener (0.0.0.0:8089).
-      - "host.docker.internal:host-gateway"
+      # Inside the container, 127.0.0.1 is the container itself, not the host.
+      # Map the ARI cert's own hostname (not host.docker.internal) to the host
+      # gateway, so ARI_URL reaches the host's TLS ARI (0.0.0.0:8089) with
+      # hostname + CA validation both intact instead of needing ARI_TLS_INSECURE.
+      - "${PBX_CERT_HOSTNAME:?set PBX_CERT_HOSTNAME in .env to the ARI cert's hostname, e.g. pbx.gixo.co.uk}:host-gateway"
     ports:
       # Your PC's browser -> ws://<VM IP>:${UI_PUBLISH_PORT}/ui
       - "${UI_PUBLISH_PORT:-8765}:8765"
