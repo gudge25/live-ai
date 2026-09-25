@@ -7,8 +7,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/
-RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter @live-ai/server...
+RUN pnpm install --frozen-lockfile --filter @live-ai/server...
 COPY packages/shared packages/shared
 COPY apps/server apps/server
 RUN pnpm --filter @live-ai/server build
