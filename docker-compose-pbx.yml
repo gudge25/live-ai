@@ -1,0 +1,45 @@
+# Live AI running on the SAME VM as Asterisk, reachable from your PC's browser.
+#   cp .env.example .env
+#     ARI_URL=https://127.0.0.1:8089            # Asterisk is local
+#     AUDIOSOCKET_ADVERTISE_HOST=127.0.0.1:9092  # Asterisk is local
+#   docker compose -f docker-compose-pbx.yml up -d --build
+#   docker compose -f docker-compose-pbx.yml logs -f live-ai
+#
+# Then from your PC: ws://<VM's IP>:8765/ui?token=<UI_TOKEN>
+#
+# 9092 (AudioSocket) is bound to 127.0.0.1 only — Asterisk is on this same VM
+# and never needs to reach it from outside. Carries raw unencrypted audio.
+#
+# 8765 (UI WebSocket) is published on all interfaces so your PC can connect
+# directly to <VM IP>:8765. Also open this port in the VM's firewall / cloud
+# security group. Note: this is plain ws:// (no TLS) — the UI_TOKEN and
+# transcripts travel unencrypted. Fine for quick testing; put a TLS reverse
+# proxy (Caddy/nginx) in front before using this for real.
+services:
+  live-ai:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: live-ai-server:latest
+    container_name: live-ai
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Fixed binds inside the container; publish ports are configured below.
+      UI_BIND: 0.0.0.0
+      UI_PORT: "8765"
+      AUDIOSOCKET_BIND: 0.0.0.0:9092
+    ports:
+      # Your PC's browser -> ws://<VM IP>:${UI_PUBLISH_PORT}/ui
+      - "${UI_PUBLISH_PORT:-8765}:8765"
+      # Asterisk -> AudioSocket, same VM only
+      - "127.0.0.1:${AUDIOSOCKET_PUBLISH_PORT:-9092}:9092"
+    volumes:
+      # Optional: CA of the PBX's TLS certificate, referenced as ARI_CA_CERT=/certs/<file>
+      - ./certs:/certs:ro
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
