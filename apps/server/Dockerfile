@@ -2,6 +2,9 @@
 
 # ---- build: install workspace deps for the server only and bundle it ----
 FROM node:24-alpine AS build
+# Some hosts' seccomp/kernel block io_uring syscalls libuv now uses for fs
+# ops by default, which surfaces as an otherwise unexplained EPERM on write.
+ENV UV_USE_IO_URING=0
 WORKDIR /repo
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
@@ -15,6 +18,7 @@ RUN pnpm --filter @live-ai/server build
 # ---- runtime: a single bundled file, no node_modules ----
 FROM node:24-alpine
 ENV NODE_ENV=production
+ENV UV_USE_IO_URING=0
 WORKDIR /app
 COPY --from=build --chown=node:node /repo/apps/server/dist ./dist
 USER node
