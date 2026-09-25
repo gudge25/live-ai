@@ -1,0 +1,18 @@
+# Runtime-only image for hosts whose Docker (classic builder, BuildKit
+# disabled) rejects --security-opt outright, so it can't be used to bypass
+# a seccomp block on syscalls Node 24's libuv uses during pnpm install/build.
+#
+# Build apps/server/dist first with `make build-pbx` (which runs the
+# install/build via `docker run --security-opt seccomp=unconfined`, the one
+# path that does accept it on such hosts) — this Dockerfile then just
+# packages that output, with no RUN step that touches pnpm or node_modules.
+FROM node:24-alpine
+ENV NODE_ENV=production
+ENV UV_USE_IO_URING=0
+WORKDIR /app
+COPY --chown=node:node apps/server/dist ./dist
+USER node
+EXPOSE 8765 9092
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${UI_PORT:-8765}/healthz" >/dev/null || exit 1
+CMD ["node", "--enable-source-maps", "dist/main.js"]

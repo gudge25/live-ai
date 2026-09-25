@@ -75,11 +75,15 @@ tunnel: ## Reverse SSH tunnel so the PBX can reach AudioSocket (PBX_SSH=user@hos
 
 # ---- co-located with Asterisk (docker-compose-pbx.yml) ----
 # Workaround for hosts whose Docker/seccomp predates the syscalls Node 24's
-# libuv uses for fs ops: BuildKit ignores --security-opt on RUN, so build
-# with the classic builder instead, then start compose without --build.
+# libuv uses for fs ops (surfaces as EPERM during pnpm install). Neither
+# BuildKit nor the classic builder accept --security-opt on `docker build`
+# on such hosts, but `docker run --security-opt` does — so build dist that
+# way, then package it with a Dockerfile that has no RUN step at all.
 
-build-pbx: ## Build the server image with seccomp unconfined (classic builder)
-	DOCKER_BUILDKIT=0 docker build --security-opt seccomp=unconfined -t live-ai-server:latest -f apps/server/Dockerfile .
+build-pbx: ## Build server dist via `docker run` (seccomp workaround), then package the runtime image
+	docker run --rm --security-opt seccomp=unconfined -v "$(CURDIR)":/repo -w /repo node:24-alpine \
+	  sh -c "corepack enable && pnpm install --frozen-lockfile --filter @live-ai/server... && pnpm --filter @live-ai/server build"
+	docker build -t live-ai-server:latest -f apps/server/Dockerfile.pbx .
 
 up-pbx: build-pbx ## Build (build-pbx) and start via docker-compose-pbx.yml
 	$(COMPOSE) -f docker-compose-pbx.yml up -d
