@@ -12,6 +12,7 @@ EXT_DIR     := apps/extension/.output/chrome-mv3
 .DEFAULT_GOAL := help
 .PHONY: help install env build test lint typecheck check \
         up down restart rebuild logs logs-pretty ps health tunnel \
+        build-pbx up-pbx \
         dev-server dev-mock ext-build ext-dev ext-zip clean
 
 help: ## Show this help
@@ -71,6 +72,17 @@ health: ## Query the service health endpoint
 tunnel: ## Reverse SSH tunnel so the PBX can reach AudioSocket (PBX_SSH=user@host)
 	@test -n "$(PBX_SSH)" || { echo "usage: make tunnel PBX_SSH=user@pbx.example.com [TUNNEL_PORT=9092]"; exit 1; }
 	ssh -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes -R 127.0.0.1:$(TUNNEL_PORT):127.0.0.1:9092 $(PBX_SSH)
+
+# ---- co-located with Asterisk (docker-compose-pbx.yml) ----
+# Workaround for hosts whose Docker/seccomp predates the syscalls Node 24's
+# libuv uses for fs ops: BuildKit ignores --security-opt on RUN, so build
+# with the classic builder instead, then start compose without --build.
+
+build-pbx: ## Build the server image with seccomp unconfined (classic builder)
+	DOCKER_BUILDKIT=0 docker build --security-opt seccomp=unconfined -t live-ai-server:latest -f apps/server/Dockerfile .
+
+up-pbx: build-pbx ## Build (build-pbx) and start via docker-compose-pbx.yml
+	$(COMPOSE) -f docker-compose-pbx.yml up -d
 
 # ---- development ----
 
