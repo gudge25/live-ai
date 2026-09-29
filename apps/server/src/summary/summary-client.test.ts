@@ -11,16 +11,16 @@ function fakeLog() {
 
 const fetchMockOf = (impl: (url: string, init?: RequestInit) => Promise<Response>) => vi.fn(impl);
 
-const originalFetch = global.fetch;
+const originalFetch = globalThis.fetch;
 afterEach(() => {
-  global.fetch = originalFetch;
+  globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
 });
 
 describe('summaryClientFactory', () => {
   it('sends the raw API key (no Bearer prefix) and returns the completion text', async () => {
     const fetchMock = fetchMockOf(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'Short summary.' } }] }), { status: 200 }));
-    global.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
     const client = summaryClientFactory(opts);
     const { log } = fakeLog();
 
@@ -44,7 +44,7 @@ describe('summaryClientFactory', () => {
   });
 
   it('returns undefined and logs a warning on a non-2xx response', async () => {
-    global.fetch = fetchMockOf(async () => new Response(JSON.stringify({ message: 'nope' }), { status: 400 })) as unknown as typeof fetch;
+    globalThis.fetch = fetchMockOf(async () => new Response(JSON.stringify({ message: 'nope' }), { status: 400 })) as unknown as typeof fetch;
     const client = summaryClientFactory(opts);
     const { log, warn } = fakeLog();
 
@@ -53,7 +53,7 @@ describe('summaryClientFactory', () => {
   });
 
   it('returns undefined and logs a warning on timeout', async () => {
-    global.fetch = fetchMockOf(async () => {
+    globalThis.fetch = fetchMockOf(async () => {
       throw new DOMException('aborted', 'TimeoutError');
     }) as unknown as typeof fetch;
     const client = summaryClientFactory(opts);
@@ -64,7 +64,7 @@ describe('summaryClientFactory', () => {
   });
 
   it('returns undefined and logs a warning on a network error', async () => {
-    global.fetch = fetchMockOf(async () => {
+    globalThis.fetch = fetchMockOf(async () => {
       throw new Error('ECONNRESET');
     }) as unknown as typeof fetch;
     const client = summaryClientFactory(opts);
@@ -75,7 +75,7 @@ describe('summaryClientFactory', () => {
   });
 
   it('returns undefined and logs a warning when the response has no content', async () => {
-    global.fetch = fetchMockOf(async () => new Response(JSON.stringify({ choices: [{ message: {} }] }), { status: 200 })) as unknown as typeof fetch;
+    globalThis.fetch = fetchMockOf(async () => new Response(JSON.stringify({ choices: [{ message: {} }] }), { status: 200 })) as unknown as typeof fetch;
     const client = summaryClientFactory(opts);
     const { log, warn } = fakeLog();
 
