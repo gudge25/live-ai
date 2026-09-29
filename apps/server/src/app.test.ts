@@ -165,6 +165,32 @@ describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
     expect(sent.at(-1)).toMatchObject({ type: 'summary', summary: 'Late summary.' });
   });
 
+  it('shutdown waits for a pending summary request before resolving', async () => {
+    summaryEnabled = true;
+    let resolveSummary!: (v: string) => void;
+    summaryClient.mockImplementation(() => new Promise((r) => (resolveSummary = r)));
+
+    events.push(bridged);
+    await tick(20);
+    await asteriskConnects('caller', 10);
+    sdks[1]!.turn({ turn_order: 0, transcript: 'Hi there.', end_of_turn: true, turn_is_formatted: true });
+
+    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+    await tick(30);
+    expect(summaryClient).toHaveBeenCalledTimes(1);
+
+    let shutdownResolved = false;
+    const shutdownPromise = app.shutdown().then(() => {
+      shutdownResolved = true;
+    });
+    await tick(10);
+    expect(shutdownResolved).toBe(false);
+
+    resolveSummary('Late summary.');
+    await shutdownPromise;
+    expect(shutdownResolved).toBe(true);
+  });
+
   it('marks the session tap_failed and leaves the call alone when ARI refuses the snoop', async () => {
     ari.failOn.set('snoopChannel', new Error('Channel not in Stasis'));
     events.push(bridged);

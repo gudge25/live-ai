@@ -1,3 +1,4 @@
+import { fetchWithTimeout, FetchTimeoutError } from '../http.js';
 import type { Logger } from '../logger.js';
 
 export interface SummaryOptions {
@@ -18,23 +19,25 @@ export function summaryClientFactory(o: SummaryOptions): SummaryClient {
     let res: Response;
     let text: string;
     try {
-      res = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { authorization: o.apiKey, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: o.model,
-          messages: [
-            { role: 'system', content: o.systemPrompt },
-            { role: 'user', content: transcriptText },
-          ],
-          temperature: 0.3,
-          max_tokens: 200,
-        }),
-        signal: AbortSignal.timeout(o.timeoutMs),
-      });
-      text = await res.text();
+      ({ res, text } = await fetchWithTimeout(
+        ENDPOINT,
+        {
+          method: 'POST',
+          headers: { authorization: o.apiKey, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: o.model,
+            messages: [
+              { role: 'system', content: o.systemPrompt },
+              { role: 'user', content: transcriptText },
+            ],
+            temperature: 0.3,
+            max_tokens: 200,
+          }),
+        },
+        o.timeoutMs,
+      ));
     } catch (e) {
-      if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      if (e instanceof FetchTimeoutError) {
         log.warn({ timeoutMs: o.timeoutMs }, 'AAI LLM Gateway: summary request timed out');
       } else {
         log.warn({ err: e }, 'AAI LLM Gateway: summary request errored');

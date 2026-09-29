@@ -47,6 +47,7 @@ export class LiveAiApp {
   readonly monitor: CallMonitor;
   readonly tap: TapOrchestrator;
   private readonly live = new Map<string, Live>();
+  private readonly pendingSummaries = new Set<Promise<void>>();
   private ui?: Broadcaster;
   private cleanedUp = false;
   ariStatus: StatusState = 'disconnected';
@@ -162,7 +163,11 @@ export class LiveAiApp {
       { sessionId: info.id, agentAudioSec: +(bytes.agent / 16000).toFixed(1), callerAudioSec: +(bytes.caller / 16000).toFixed(1), partials, finals },
       'session summary',
     );
-    if (this.o.summaryEnabled && finals > 0) void this.summarize(info.id, info.extension, utterances);
+    if (this.o.summaryEnabled && finals > 0) {
+      const p = this.summarize(info.id, info.extension, utterances);
+      this.pendingSummaries.add(p);
+      void p.finally(() => this.pendingSummaries.delete(p));
+    }
   }
 
   /** Fire-and-forget: never awaited by `onEnd()`, so it can't delay `session_ended`. */
@@ -176,8 +181,9 @@ export class LiveAiApp {
     }
   }
 
-  /** Graceful shutdown: end all sessions and remove our ARI resources. */
+  /** Graceful shutdown: end all sessions, remove our ARI resources, and let in-flight summary requests finish. */
   async shutdown(): Promise<void> {
     await Promise.allSettled(this.activeChannels.map((id) => this.onEnd(id)));
+    await Promise.allSettled([...this.pendingSummaries]);
   }
 }

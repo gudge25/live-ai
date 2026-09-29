@@ -8,8 +8,8 @@ export function Dialog({ session, labels }: { session: SessionView; labels: Reco
   const ref = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState(true);
   const lastText = session.items.at(-1)?.text;
-  // Content "version": changes when a bubble is added or the last one grows.
-  const contentKey = `${session.items.length}:${lastText ?? ''}`;
+  // Content "version": changes when a bubble is added, the last one grows, or the summary arrives.
+  const contentKey = `${session.items.length}:${lastText ?? ''}:${session.summary ?? ''}`;
   // Content version at the moment the user scrolled away from the bottom.
   const [seenKey, setSeenKey] = useState(contentKey);
   const hasNew = !stick && contentKey !== seenKey;
