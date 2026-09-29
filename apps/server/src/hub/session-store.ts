@@ -30,6 +30,14 @@ export class SessionStore {
     return s;
   }
 
+  /** Attaches a summary to a session still in history. Returns false (no-op) if it was already evicted. */
+  setSummary(id: string, summary: string): boolean {
+    const s = this.sessions.get(id);
+    if (!s) return false;
+    s.summary = summary;
+    return true;
+  }
+
   /** Active sessions first, then ended ones, newest first. */
   snapshot(filter?: (s: SessionInfo) => boolean): SessionSnapshot[] {
     return [...this.sessions.values()]

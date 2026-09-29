@@ -38,6 +38,7 @@ export type Utterance = z.infer<typeof Utterance>;
 
 export const SessionSnapshot = SessionInfo.extend({
   utterances: z.array(Utterance),
+  summary: z.string().optional(),
 });
 export type SessionSnapshot = z.infer<typeof SessionSnapshot>;
 
@@ -85,6 +86,12 @@ export const StatusEvent = z.object({
   message: z.string().optional(),
 });
 
+export const SummaryEvent = z.object({
+  type: z.literal('summary'),
+  sessionId: z.string().min(1),
+  summary: z.string(),
+});
+
 export const ServerEvent = z.discriminatedUnion('type', [
   SnapshotEvent,
   SessionStartedEvent,
@@ -92,6 +99,7 @@ export const ServerEvent = z.discriminatedUnion('type', [
   FinalEvent,
   SessionEndedEvent,
   StatusEvent,
+  SummaryEvent,
 ]);
 export type SnapshotEvent = z.infer<typeof SnapshotEvent>;
 export type SessionStartedEvent = z.infer<typeof SessionStartedEvent>;
@@ -99,6 +107,7 @@ export type PartialEvent = z.infer<typeof PartialEvent>;
 export type FinalEvent = z.infer<typeof FinalEvent>;
 export type SessionEndedEvent = z.infer<typeof SessionEndedEvent>;
 export type StatusEvent = z.infer<typeof StatusEvent>;
+export type SummaryEvent = z.infer<typeof SummaryEvent>;
 export type ServerEvent = z.infer<typeof ServerEvent>;
 
 // ---- client -> server ----

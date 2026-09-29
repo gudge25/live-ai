@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import type { ServerEvent, SessionInfo, Side, StatusState } from '@live-ai/shared';
+import type { ServerEvent, SessionInfo, Side, StatusState, Utterance } from '@live-ai/shared';
 import type { AriApi } from './ari/rest.js';
 import type { AudioSink, AudioSocketServer } from './audiosocket/server.js';
 import { SessionStore } from './hub/session-store.js';
 import type { Logger } from './logger.js';
 import { CallMonitor, type AriEventSource, type MonitoredCall } from './monitor/call-monitor.js';
+import type { SummaryClient } from './summary/summary-client.js';
+import { formatSummaryTranscript } from './summary/transcript.js';
 import { TapError, TapOrchestrator } from './tap/tap.js';
 import { CallTranscription, type SdkParams } from './transcription/call-transcription.js';
 import type { SdkTranscriber } from './transcription/streaming-session.js';
@@ -27,6 +29,8 @@ export interface AppOptions {
   dualChannel: boolean;
   maxConcurrent: number;
   logTranscripts: boolean;
+  summaryEnabled: boolean;
+  summaryClient: SummaryClient;
   monitor?: Partial<ConstructorParameters<typeof CallMonitor>[0]>;
   transcription?: { reconnectDelayMs?: number };
 }
@@ -147,6 +151,8 @@ export class LiveAiApp {
     const { info } = entry;
     await this.tap.detach(info.id);
     await entry.ct?.close(); // waits for AAI to finalize the last turn
+    // Snapshot before `update()` marks the session ended, since that can evict it immediately.
+    const utterances = this.o.store.get(info.id)?.utterances ?? [];
     const endedAt = new Date().toISOString();
     this.o.store.update(info.id, { state: 'ended', endedAt });
     this.ui?.broadcast({ type: 'session_ended', sessionId: info.id, endedAt, state: 'ended' }, info.extension);
@@ -156,6 +162,18 @@ export class LiveAiApp {
       { sessionId: info.id, agentAudioSec: +(bytes.agent / 16000).toFixed(1), callerAudioSec: +(bytes.caller / 16000).toFixed(1), partials, finals },
       'session summary',
     );
+    if (this.o.summaryEnabled && finals > 0) void this.summarize(info.id, info.extension, utterances);
+  }
+
+  /** Fire-and-forget: never awaited by `onEnd()`, so it can't delay `session_ended`. */
+  private async summarize(sessionId: string, extension: string, utterances: Utterance[]): Promise<void> {
+    const text = formatSummaryTranscript(utterances);
+    if (!text) return;
+    const summary = await this.o.summaryClient(text, this.o.log.child({ sessionId }));
+    if (!summary) return;
+    if (this.o.store.setSummary(sessionId, summary)) {
+      this.ui?.broadcast({ type: 'summary', sessionId, summary }, extension);
+    }
   }
 
   /** Graceful shutdown: end all sessions and remove our ARI resources. */

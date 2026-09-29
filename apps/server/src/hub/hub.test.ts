@@ -26,6 +26,23 @@ describe('SessionStore', () => {
     expect(s.get('a')!.utterances.map((u) => u.text)).toEqual(['X.', 'Hi.']);
   });
 
+  it('setSummary attaches a summary that appears in the next snapshot', () => {
+    const s = new SessionStore(5);
+    s.add(info('a', '222'));
+    expect(s.setSummary('a', 'Caller asked for a callback.')).toBe(true);
+    expect(s.get('a')?.summary).toBe('Caller asked for a callback.');
+    expect(s.snapshot()[0]?.summary).toBe('Caller asked for a callback.');
+  });
+
+  it('setSummary is a no-op for an already-evicted session', () => {
+    const s = new SessionStore(0);
+    s.add(info('a', '222'));
+    s.update('a', { state: 'ended', endedAt: '2026-09-24T10:01:00.000Z' });
+    expect(s.get('a')).toBeUndefined();
+    expect(s.setSummary('a', 'too late')).toBe(false);
+    expect(s.get('a')).toBeUndefined();
+  });
+
   it('evicts the oldest ended sessions beyond the limit and keeps active ones', () => {
     const s = new SessionStore(2);
     for (const id of ['a', 'b', 'c', 'd']) s.add(info(id, '222'));

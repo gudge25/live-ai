@@ -21,6 +21,24 @@ describe('loadConfig', () => {
     expect(cfg.AAI_LANGUAGE_CODES).toEqual(['en']);
     expect(cfg.AAI_DUAL_CHANNEL).toBe(false);
     expect(cfg.UI_PORT).toBe(8765);
+    expect(cfg.AAI_SUMMARY_ENABLED).toBe(false);
+    expect(cfg.AAI_SUMMARY_MODEL).toBe('qwen3.5-4b-32k-fast');
+    expect(cfg.AAI_SUMMARY_TIMEOUT_MS).toBe(10000);
+    expect(cfg.AAI_SUMMARY_SYSTEM_PROMPT).toMatch(/Plain text only/);
+  });
+
+  it('parses explicit summary settings', () => {
+    const cfg = loadConfig({
+      ...base,
+      AAI_SUMMARY_ENABLED: 'true',
+      AAI_SUMMARY_MODEL: 'gemini-2.5-flash-lite',
+      AAI_SUMMARY_TIMEOUT_MS: '5000',
+      AAI_SUMMARY_SYSTEM_PROMPT: 'Summarize briefly.',
+    });
+    expect(cfg.AAI_SUMMARY_ENABLED).toBe(true);
+    expect(cfg.AAI_SUMMARY_MODEL).toBe('gemini-2.5-flash-lite');
+    expect(cfg.AAI_SUMMARY_TIMEOUT_MS).toBe(5000);
+    expect(cfg.AAI_SUMMARY_SYSTEM_PROMPT).toBe('Summarize briefly.');
   });
 
   it('reports a clear error when ARI_URL is missing', () => {

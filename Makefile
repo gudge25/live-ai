@@ -54,8 +54,10 @@ down: ## Stop and remove the service
 restart: ## Restart the service (keeps the image)
 	$(COMPOSE) restart $(SERVICE)
 
-rebuild: ## Rebuild the image without cache and restart
+rebuild: ## Rebuild the server image (no cache) + the extension, then restart the service
 	$(COMPOSE) build --no-cache $(SERVICE) && $(COMPOSE) up -d $(SERVICE)
+	$(PNPM) --filter @live-ai/extension build
+	@echo "→ chrome://extensions → Load unpacked / Reload → $(EXT_DIR)"
 
 logs: ## Follow service logs (raw JSON)
 	$(COMPOSE) logs -f --tail=100 $(SERVICE)

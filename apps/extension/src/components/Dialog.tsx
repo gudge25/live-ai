@@ -55,6 +55,11 @@ export function Dialog({ session, labels }: { session: SessionView; labels: Reco
             <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
           </div>
         )}
+        {ended && session.summary && (
+          <div className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs whitespace-pre-wrap text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+            {session.summary}
+          </div>
+        )}
       </div>
       {!stick && hasNew && (
         <button
