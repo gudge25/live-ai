@@ -23,6 +23,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
+      - name: Rewrite lcov paths to be repo-root-relative (each package's vitest run records them relative to its own directory)
+        run: |
+          sed -i 's#^SF:#SF:packages/shared/#' packages/shared/coverage/lcov.info
+          sed -i 's#^SF:#SF:apps/server/#' apps/server/coverage/lcov.info
+          sed -i 's#^SF:#SF:apps/extension/#' apps/extension/coverage/lcov.info
       - uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
