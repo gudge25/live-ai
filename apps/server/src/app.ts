@@ -184,6 +184,6 @@ export class LiveAiApp {
   /** Graceful shutdown: end all sessions, remove our ARI resources, and let in-flight summary requests finish. */
   async shutdown(): Promise<void> {
     await Promise.allSettled(this.activeChannels.map((id) => this.onEnd(id)));
-    await Promise.allSettled([...this.pendingSummaries]);
+    await Promise.allSettled(this.pendingSummaries);
   }
 }

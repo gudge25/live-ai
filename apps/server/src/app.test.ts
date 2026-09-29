@@ -74,6 +74,21 @@ async function asteriskConnects(side: 'agent' | 'caller', frames: number) {
   return s;
 }
 
+/** Runs a call through hangup with the summary request left pending; returns the function that resolves it. */
+async function callEndedWithPendingSummary(): Promise<(summary: string) => void> {
+  let resolveSummary!: (v: string) => void;
+  summaryClient.mockImplementation(() => new Promise((r) => (resolveSummary = r)));
+
+  events.push(bridged);
+  await tick(20);
+  await asteriskConnects('caller', 10);
+  sdks[1]!.turn({ turn_order: 0, transcript: 'Hi there.', end_of_turn: true, turn_is_formatted: true });
+
+  events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+  await tick(30);
+  return resolveSummary;
+}
+
 describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
   it('222 answers -> tap -> audio -> transcript -> UI; hangup -> cleanup', async () => {
     events.push(bridged);
@@ -146,16 +161,7 @@ describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
 
   it('publishes session_ended without waiting for the summary request to resolve', async () => {
     summaryEnabled = true;
-    let resolveSummary!: (v: string) => void;
-    summaryClient.mockImplementation(() => new Promise((r) => (resolveSummary = r)));
-
-    events.push(bridged);
-    await tick(20);
-    await asteriskConnects('caller', 10);
-    sdks[1]!.turn({ turn_order: 0, transcript: 'Hi there.', end_of_turn: true, turn_is_formatted: true });
-
-    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
-    await tick(30);
+    const resolveSummary = await callEndedWithPendingSummary();
 
     expect(sent.at(-1)).toMatchObject({ type: 'session_ended', state: 'ended' });
     expect(sent.some((e) => e.type === 'summary')).toBe(false);
@@ -167,16 +173,7 @@ describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
 
   it('shutdown waits for a pending summary request before resolving', async () => {
     summaryEnabled = true;
-    let resolveSummary!: (v: string) => void;
-    summaryClient.mockImplementation(() => new Promise((r) => (resolveSummary = r)));
-
-    events.push(bridged);
-    await tick(20);
-    await asteriskConnects('caller', 10);
-    sdks[1]!.turn({ turn_order: 0, transcript: 'Hi there.', end_of_turn: true, turn_is_formatted: true });
-
-    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
-    await tick(30);
+    const resolveSummary = await callEndedWithPendingSummary();
     expect(summaryClient).toHaveBeenCalledTimes(1);
 
     let shutdownResolved = false;
