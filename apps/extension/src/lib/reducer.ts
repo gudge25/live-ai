@@ -17,6 +17,8 @@ export interface SessionView {
   finalized: Record<string, true>;
   /** Latest degradation notice for this session (tap/transcription). */
   notice?: string;
+  /** Post-call summary, once the backend has generated it. */
+  summary?: string;
 }
 
 export interface State {
@@ -46,14 +48,14 @@ function passes(filter: string[], info: SessionInfo): boolean {
 }
 
 function fromSnapshot(s: SessionSnapshot): SessionView {
-  const { utterances, ...info } = s;
+  const { utterances, summary, ...info } = s;
   const finalized: Record<string, true> = {};
   const items = utterances.map((u) => {
     const key = itemKey(u.side, u.turn);
     finalized[key] = true;
     return { key, side: u.side, turn: u.turn, text: u.text, ts: u.ts, partial: false };
   });
-  return { info, items, finalized };
+  return { info, items, finalized, summary };
 }
 
 function latest(order: string[]): string | null {
@@ -122,6 +124,8 @@ function applyEvent(state: State, ev: ServerEvent): State {
         notice: ev.message ?? ev.state,
         info: ev.state === 'tap_failed' ? { ...s.info, state: 'tap_failed' } : s.info,
       }));
+    case 'summary':
+      return withSession(state, ev.sessionId, (s) => ({ ...s, summary: ev.summary }));
   }
 }
 

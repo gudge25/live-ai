@@ -9,6 +9,7 @@
     "build": "tsup",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "mock-events": "tsx --env-file-if-exists=../../.env src/dev/mock-events.ts"
   },
   "dependencies": {

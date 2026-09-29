@@ -41,6 +41,15 @@ const EnvSchema = z.object({
   AAI_KEYTERMS: list.default([]),
   AAI_DUAL_CHANNEL: bool.default(false),
   AAI_MAX_CONCURRENT_SESSIONS: z.coerce.number().int().positive().default(20),
+  AAI_SUMMARY_ENABLED: bool.default(false),
+  AAI_SUMMARY_MODEL: z.string().min(1).default('qwen3.5-4b-32k-fast'),
+  AAI_SUMMARY_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+  AAI_SUMMARY_SYSTEM_PROMPT: z
+    .string()
+    .min(1)
+    .default(
+      'Summarize this phone call transcript for an operator glancing at it after the call. Plain text only, no markdown, no headers, no bold, no asterisks. 2-4 short sentences covering: what the call was about, what the caller wanted, and any action items.',
+    ),
 
   // --- UI ---
   UI_BIND: z.string().default('0.0.0.0'),

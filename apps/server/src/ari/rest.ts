@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { Agent, type Dispatcher } from 'undici';
+import { fetchWithTimeout, FetchTimeoutError } from '../http.js';
 import type { AriBridge, AriChannel } from './types.js';
 
 export interface AriConnectionOptions {
@@ -86,18 +87,18 @@ export class AriRest implements AriApi {
     let res: Response;
     let text: string;
     try {
-      res = await fetch(url, {
-        method,
-        headers: { authorization: this.auth, accept: 'application/json' },
-        signal: AbortSignal.timeout(this.timeoutMs),
-        // @ts-expect-error undici dispatcher is supported by Node's fetch
-        dispatcher: this.dispatcher,
-      });
-      text = await res.text();
+      ({ res, text } = await fetchWithTimeout(
+        url,
+        {
+          method,
+          headers: { authorization: this.auth, accept: 'application/json' },
+          // @ts-expect-error undici dispatcher is supported by Node's fetch
+          dispatcher: this.dispatcher,
+        },
+        this.timeoutMs,
+      ));
     } catch (e) {
-      if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
-        throw new AriTimeoutError(method, path, this.timeoutMs);
-      }
+      if (e instanceof FetchTimeoutError) throw new AriTimeoutError(method, path, this.timeoutMs);
       throw e;
     }
     if (!res.ok) throw new AriHttpError(res.status, method, path, text);

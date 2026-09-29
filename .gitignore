@@ -3,6 +3,7 @@ node_modules/
 dist/
 .output/
 .wxt/
+coverage/
 .env
 *.log
 certs/*

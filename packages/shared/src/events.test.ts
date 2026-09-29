@@ -35,6 +35,35 @@ describe('server events', () => {
   it('rejects negative turn', () => {
     expect(() => parseServerEvent({ type: 'final', sessionId: 's1', side: 'caller', turn: -1, text: 'x', ts })).toThrow();
   });
+
+  it('parses a summary event', () => {
+    const ev = parseServerEvent({ type: 'summary', sessionId: 's1', summary: 'Caller asked for a callback.' });
+    expect(ev).toEqual({ type: 'summary', sessionId: 's1', summary: 'Caller asked for a callback.' });
+  });
+
+  it('rejects a summary event without a summary field', () => {
+    expect(() => parseServerEvent({ type: 'summary', sessionId: 's1' })).toThrow();
+  });
+
+  it('parses a snapshot with an optional summary on a session', () => {
+    const ev = parseServerEvent({
+      type: 'snapshot',
+      ari: 'connected',
+      sessions: [
+        {
+          id: 's1',
+          extension: '222',
+          channelId: '1695.1',
+          remote: { name: 'Bob', number: '+441234' },
+          startedAt: ts,
+          state: 'ended',
+          utterances: [],
+          summary: 'Caller asked for a callback.',
+        },
+      ],
+    });
+    expect(ev.type === 'snapshot' && ev.sessions[0]?.summary).toBe('Caller asked for a callback.');
+  });
 });
 
 describe('client messages', () => {

@@ -8,8 +8,8 @@ export function Dialog({ session, labels }: { session: SessionView; labels: Reco
   const ref = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState(true);
   const lastText = session.items.at(-1)?.text;
-  // Content "version": changes when a bubble is added or the last one grows.
-  const contentKey = `${session.items.length}:${lastText ?? ''}`;
+  // Content "version": changes when a bubble is added, the last one grows, or the summary arrives.
+  const contentKey = `${session.items.length}:${lastText ?? ''}:${session.summary ?? ''}`;
   // Content version at the moment the user scrolled away from the bottom.
   const [seenKey, setSeenKey] = useState(contentKey);
   const hasNew = !stick && contentKey !== seenKey;
@@ -53,6 +53,11 @@ export function Dialog({ session, labels }: { session: SessionView; labels: Reco
             <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
             {session.info.state === 'tap_failed' ? 'Could not attach to call' : 'Call ended'}
             <span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
+          </div>
+        )}
+        {ended && session.summary && (
+          <div className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs whitespace-pre-wrap text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+            {session.summary}
           </div>
         )}
       </div>

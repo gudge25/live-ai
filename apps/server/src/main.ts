@@ -6,6 +6,7 @@ import { ConfigError, loadConfig, redactConfig, splitHostPort } from './config.j
 import { SessionStore } from './hub/session-store.js';
 import { UiServer } from './hub/ui-server.js';
 import { createLogger } from './logger.js';
+import { summaryClientFactory } from './summary/summary-client.js';
 import { assemblyAiFactory } from './transcription/assemblyai.js';
 
 /** AudioSocket on Asterisk 18 carries signed linear 8 kHz only. */
@@ -57,6 +58,13 @@ async function main() {
     dualChannel: cfg.AAI_DUAL_CHANNEL,
     maxConcurrent: cfg.AAI_MAX_CONCURRENT_SESSIONS,
     logTranscripts: cfg.LOG_TRANSCRIPTS,
+    summaryEnabled: cfg.AAI_SUMMARY_ENABLED,
+    summaryClient: summaryClientFactory({
+      apiKey: cfg.ASSEMBLYAI_API_KEY,
+      model: cfg.AAI_SUMMARY_MODEL,
+      systemPrompt: cfg.AAI_SUMMARY_SYSTEM_PROMPT,
+      timeoutMs: cfg.AAI_SUMMARY_TIMEOUT_MS,
+    }),
   });
   const ui = new UiServer({ token: cfg.UI_TOKEN, store, log: log.child({ mod: 'ui' }), ariStatus: () => app.ariStatus });
   app.attachUi(ui);

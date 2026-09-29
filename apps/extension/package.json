@@ -9,6 +9,7 @@
     "zip": "wxt zip",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "postinstall": "wxt prepare"
   },
   "dependencies": {

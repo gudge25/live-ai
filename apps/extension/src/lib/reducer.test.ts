@@ -71,6 +71,23 @@ describe('reducer', () => {
     expect(st.sessions.a!.finalized['agent:0']).toBe(true);
   });
 
+  it('carries a summary already present on a snapshot session', () => {
+    const st = run([
+      { type: 'snapshot', ari: 'connected', sessions: [{ ...info('a', '222', 1), state: 'ended', utterances: [], summary: 'Caller asked for a callback.' }] },
+    ]);
+    expect(st.sessions.a!.summary).toBe('Caller asked for a callback.');
+  });
+
+  it('applies a summary event to an existing session', () => {
+    const st = run([started('s1'), { type: 'summary', sessionId: 's1', summary: 'Caller asked for a callback.' }]);
+    expect(st.sessions.s1!.summary).toBe('Caller asked for a callback.');
+  });
+
+  it('ignores a summary event for a session no longer in state (scrolled out of history)', () => {
+    const st = run([{ type: 'summary', sessionId: 'nope', summary: 'too late' }]);
+    expect(st.sessions).toEqual({});
+  });
+
   it('marks session ended but keeps the dialog', () => {
     const st = run([
       started('s1'),

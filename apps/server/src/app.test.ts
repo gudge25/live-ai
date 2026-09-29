@@ -1,10 +1,11 @@
 import { connect } from 'node:net';
 import type { ServerEvent } from '@live-ai/shared';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LiveAiApp } from './app.js';
 import { encodeFrame, Kind, uuidToBytes } from './audiosocket/protocol.js';
 import { AudioSocketServer } from './audiosocket/server.js';
 import { SessionStore } from './hub/session-store.js';
+import type { SummaryClient } from './summary/summary-client.js';
 import { FakeAri, FakeEvents, tick } from './test/fake-ari.js';
 import { silentLog } from './test/log.js';
 import { FakeSdk } from './transcription/fake-sdk.js';
@@ -17,6 +18,8 @@ let sdks: FakeSdk[];
 let sent: ServerEvent[];
 let store: SessionStore;
 let app: LiveAiApp;
+let summaryEnabled: boolean;
+let summaryClient: ReturnType<typeof vi.fn<SummaryClient>>;
 
 const agentChannel = { id: '1695.10', name: 'PJSIP/222-0000000a', state: 'Up', caller: { name: 'Bob', number: '+447700900123' }, connected: { name: '', number: '222' } };
 const bridged = { type: 'ChannelEnteredBridge', channel: agentChannel, bridge: { id: 'dial-bridge', channels: ['1695.10', '1695.9'] } };
@@ -30,6 +33,8 @@ beforeEach(async () => {
   sdks = [];
   sent = [];
   store = new SessionStore(10);
+  summaryEnabled = false;
+  summaryClient = vi.fn(async () => 'A short summary.');
   app = new LiveAiApp({
     api: ari,
     events,
@@ -48,6 +53,10 @@ beforeEach(async () => {
     dualChannel: false,
     maxConcurrent: 5,
     logTranscripts: false,
+    get summaryEnabled() {
+      return summaryEnabled;
+    },
+    summaryClient,
   });
   app.attachUi({ broadcast: (ev) => sent.push(ev) });
 });
@@ -63,6 +72,21 @@ async function asteriskConnects(side: 'agent' | 'caller', frames: number) {
   for (let i = 0; i < frames; i++) s.write(encodeFrame(Kind.Audio, Buffer.alloc(320)));
   await tick(20);
   return s;
+}
+
+/** Runs a call through hangup with the summary request left pending; returns the function that resolves it. */
+async function callEndedWithPendingSummary(): Promise<(summary: string) => void> {
+  let resolveSummary!: (v: string) => void;
+  summaryClient.mockImplementation(() => new Promise((r) => (resolveSummary = r)));
+
+  events.push(bridged);
+  await tick(20);
+  await asteriskConnects('caller', 10);
+  sdks[1]!.turn({ turn_order: 0, transcript: 'Hi there.', end_of_turn: true, turn_is_formatted: true });
+
+  events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+  await tick(30);
+  return resolveSummary;
 }
 
 describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
@@ -92,6 +116,76 @@ describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
     expect(ari.bridges.size).toBe(0);
     expect(sdks.every((s) => s.closedWith?.wait === true)).toBe(true);
     expect(store.snapshot()[0]).toMatchObject({ state: 'ended', utterances: [{ text: 'Hi, I have a question.' }] });
+  });
+
+  it('requests and broadcasts a summary when the feature is enabled and there is a transcript', async () => {
+    summaryEnabled = true;
+    events.push(bridged);
+    await tick(20);
+    await asteriskConnects('caller', 10);
+    sdks[1]!.turn({ turn_order: 0, transcript: 'Hi, I have a question.', end_of_turn: true, turn_is_formatted: true });
+
+    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+    await tick(30);
+
+    expect(summaryClient).toHaveBeenCalledTimes(1);
+    expect(summaryClient.mock.calls[0]![0]).toBe('Caller: Hi, I have a question.');
+    expect(sent.at(-1)).toMatchObject({ type: 'summary', summary: 'A short summary.' });
+    expect(store.snapshot()[0]?.summary).toBe('A short summary.');
+  });
+
+  it('does not request a summary when the call has no final transcript', async () => {
+    summaryEnabled = true;
+    events.push(bridged);
+    await tick(20);
+
+    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+    await tick(30);
+
+    expect(summaryClient).not.toHaveBeenCalled();
+    expect(sent.some((e) => e.type === 'summary')).toBe(false);
+  });
+
+  it('does not request a summary when the feature is disabled', async () => {
+    summaryEnabled = false;
+    events.push(bridged);
+    await tick(20);
+    await asteriskConnects('caller', 10);
+    sdks[1]!.turn({ turn_order: 0, transcript: 'Hi there.', end_of_turn: true, turn_is_formatted: true });
+
+    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+    await tick(30);
+
+    expect(summaryClient).not.toHaveBeenCalled();
+  });
+
+  it('publishes session_ended without waiting for the summary request to resolve', async () => {
+    summaryEnabled = true;
+    const resolveSummary = await callEndedWithPendingSummary();
+
+    expect(sent.at(-1)).toMatchObject({ type: 'session_ended', state: 'ended' });
+    expect(sent.some((e) => e.type === 'summary')).toBe(false);
+
+    resolveSummary('Late summary.');
+    await tick(10);
+    expect(sent.at(-1)).toMatchObject({ type: 'summary', summary: 'Late summary.' });
+  });
+
+  it('shutdown waits for a pending summary request before resolving', async () => {
+    summaryEnabled = true;
+    const resolveSummary = await callEndedWithPendingSummary();
+    expect(summaryClient).toHaveBeenCalledTimes(1);
+
+    let shutdownResolved = false;
+    const shutdownPromise = app.shutdown().then(() => {
+      shutdownResolved = true;
+    });
+    await tick(10);
+    expect(shutdownResolved).toBe(false);
+
+    resolveSummary('Late summary.');
+    await shutdownPromise;
+    expect(shutdownResolved).toBe(true);
   });
 
   it('marks the session tap_failed and leaves the call alone when ARI refuses the snoop', async () => {
