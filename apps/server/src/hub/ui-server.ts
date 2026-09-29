@@ -98,7 +98,7 @@ export class UiServer {
 
     ws.on('message', (raw) => {
       try {
-        const msg = parseClientMessage(JSON.parse(String(raw)));
+        const msg = parseClientMessage(JSON.parse((raw as Buffer).toString()));
         if (msg.type === 'subscribe') {
           client.extensions = new Set(msg.extensions);
           this.sendSnapshot(client);

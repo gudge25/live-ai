@@ -1,6 +1,6 @@
 import { pino, type Logger } from 'pino';
 
-export type { Logger };
+export type { Logger } from 'pino';
 
 export function createLogger(level: string): Logger {
   return pino({

@@ -70,7 +70,7 @@ export class TurnMapper {
 
   /** Promote every unformatted end-of-turn still waiting for its formatted version. */
   flush(): void {
-    for (const [key, ev] of [...this.pendingEot]) {
+    for (const [key, ev] of this.pendingEot) {
       this.clearPending(key);
       this.finalize(key, ev);
     }

@@ -112,7 +112,7 @@ export class StreamingSession {
     });
     const begin = (await sdk.connect()) as { id?: string } | undefined;
     this.o.log.info({ aaiSession: begin?.id }, 'AAI stream opened');
-    if ((this.state as State) === 'closing' || (this.state as State) === 'closed') {
+    if (this.state === 'closing' || this.state === 'closed') {
       await sdk.close(false).catch(() => undefined);
       return;
     }

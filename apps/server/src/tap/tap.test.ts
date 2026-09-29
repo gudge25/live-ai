@@ -32,10 +32,11 @@ const ours = () => ({
 describe('TapOrchestrator.attach', () => {
   it('creates exactly 2 snoops, 2 audiosocket channels and 2 bridges with the right params', async () => {
     const h = await tap.attach('s1', '1695.10', sinks);
-    expect(ours().channels.sort()).toEqual(
-      ['liveai-s1-em-agent', 'liveai-s1-em-caller', 'liveai-s1-snoop-agent', 'liveai-s1-snoop-caller'].sort(),
+    const byLocale = (a?: string, b?: string) => (a ?? '').localeCompare(b ?? '');
+    expect(ours().channels.toSorted(byLocale)).toEqual(
+      ['liveai-s1-em-agent', 'liveai-s1-em-caller', 'liveai-s1-snoop-agent', 'liveai-s1-snoop-caller'].toSorted(byLocale),
     );
-    expect(ours().bridges.sort()).toEqual(['liveai-s1-br-agent', 'liveai-s1-br-caller']);
+    expect(ours().bridges.toSorted(byLocale)).toEqual(['liveai-s1-br-agent', 'liveai-s1-br-caller']);
 
     const snoops = ari.calls.filter((c) => c.op === 'snoopChannel');
     expect(snoops.map((c) => c.args)).toEqual([
@@ -44,7 +45,7 @@ describe('TapOrchestrator.attach', () => {
     ]);
     const ems = ari.calls.filter((c) => c.op === 'createExternalMedia').map((c) => c.args[0] as Record<string, string>);
     expect(ems.every((e) => e.externalHost === '10.0.0.5:9092' && e.format === 'slin')).toBe(true);
-    expect(ems.map((e) => e.data).sort()).toEqual([...h.uuids].sort());
+    expect(ems.map((e) => e.data).toSorted(byLocale)).toEqual(h.uuids.toSorted(byLocale));
     expect(registered.size).toBe(2);
 
     expect(ari.bridges.get('liveai-s1-br-agent')!.channels).toEqual(['liveai-s1-snoop-agent', 'liveai-s1-em-agent']);

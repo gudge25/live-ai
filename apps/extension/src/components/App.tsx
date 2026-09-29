@@ -11,7 +11,7 @@ import { Dialog } from './Dialog';
 
 export type AppMode = 'sidepanel' | 'popout';
 
-export function App({ mode }: { mode: AppMode }) {
+export function App({ mode }: { readonly mode: AppMode }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [conn, setConn] = useState<{ state: ConnectionState; detail?: string }>({ state: 'connecting' });
   const [state, dispatch] = useReducer(reducer, undefined, () => initialState());
@@ -54,7 +54,7 @@ export function App({ mode }: { mode: AppMode }) {
         sessions={sessions}
         selected={session}
         onSelect={(id) => dispatch({ type: 'select', id })}
-        onSettings={() => void browser.runtime.openOptionsPage()}
+        onSettings={() => browser.runtime.openOptionsPage()}
       />
 
       {session ? (
@@ -81,7 +81,7 @@ export function App({ mode }: { mode: AppMode }) {
   );
 }
 
-function ToolbarButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function ToolbarButton(props: Readonly<React.ButtonHTMLAttributes<HTMLButtonElement>>) {
   return (
     <button
       type="button"
@@ -91,7 +91,7 @@ function ToolbarButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   );
 }
 
-function EmptyState({ conn, extensions, hasToken }: { conn: ConnectionState; extensions: string[]; hasToken: boolean }) {
+function EmptyState({ conn, extensions, hasToken }: { readonly conn: ConnectionState; readonly extensions: string[]; readonly hasToken: boolean }) {
   const target = extensions.length ? extensions.join(', ') : 'any extension';
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">

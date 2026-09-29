@@ -40,7 +40,7 @@ async function runCall(n: number) {
     const turn = turns[side]++;
     const words = sentence.split(' ');
     for (let i = 1; i <= words.length; i++) {
-      const text = words.slice(0, i).join(' ').toLowerCase().replace(/[.,!?]/g, '');
+      const text = words.slice(0, i).join(' ').toLowerCase().replaceAll(/[.,!?]/g, '');
       ui.broadcast({ type: 'partial', sessionId: info.id, side, turn, text, ts: new Date().toISOString() }, info.extension);
       await sleep(180);
     }

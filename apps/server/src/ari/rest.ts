@@ -33,7 +33,8 @@ export class AriHttpError extends Error {
     readonly path: string,
     body: string,
   ) {
-    super(`ARI ${method} ${path} -> ${status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+    const bodySuffix = body ? `: ${body.slice(0, 200)}` : '';
+    super(`ARI ${method} ${path} -> ${status}${bodySuffix}`);
     this.name = 'AriHttpError';
   }
 }
@@ -74,7 +75,8 @@ export class AriRest implements AriApi {
     this.app = opts.app;
     this.timeoutMs = opts.requestTimeoutMs ?? 5000;
     this.base = `${opts.url.replace(/\/+$/, '')}/ari`;
-    this.auth = `Basic ${Buffer.from(`${opts.user}:${opts.password}`).toString('base64')}`;
+    const credentials = `${opts.user}:${opts.password}`;
+    this.auth = `Basic ${Buffer.from(credentials).toString('base64')}`;
     if (this.base.startsWith('https:') && (opts.caCertPath || opts.tlsInsecure)) {
       this.dispatcher = new Agent({ connect: tlsOptions(opts) });
     }
@@ -83,7 +85,8 @@ export class AriRest implements AriApi {
   private async request<T>(method: string, path: string, query: Query = {}): Promise<T> {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(query)) if (v !== undefined) qs.set(k, String(v));
-    const url = `${this.base}${path}${qs.size ? `?${qs}` : ''}`;
+    const queryString = qs.size ? `?${qs}` : '';
+    const url = `${this.base}${path}${queryString}`;
     let res: Response;
     let text: string;
     try {

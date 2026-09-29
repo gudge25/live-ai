@@ -27,7 +27,7 @@ const EnvSchema = z.object({
 
   // --- Monitoring ---
   MONITORED_EXTENSIONS: list.pipe(z.array(z.string().regex(/^[\w*#+-]+$/)).min(1, 'MONITORED_EXTENSIONS must list at least one extension')),
-  CHANNEL_TECH: z.string().regex(/^[A-Za-z0-9_]+$/).default('PJSIP'),
+  CHANNEL_TECH: z.string().regex(/^\w+$/).default('PJSIP'),
 
   // --- AudioSocket ---
   AUDIOSOCKET_BIND: hostPort.default('0.0.0.0:9092'),
@@ -66,7 +66,8 @@ export type Config = z.infer<typeof EnvSchema>;
 
 export class ConfigError extends Error {
   constructor(readonly issues: string[]) {
-    super(`Invalid configuration:\n${issues.map((i) => `  - ${i}`).join('\n')}`);
+    const list = issues.map((i) => `  - ${i}`).join('\n');
+    super(`Invalid configuration:\n${list}`);
     this.name = 'ConfigError';
   }
 }

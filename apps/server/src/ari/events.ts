@@ -82,7 +82,7 @@ export class AriEventStream extends EventEmitter<AriEventStreamEvents> {
     });
     ws.on('message', (data) => {
       try {
-        const ev = JSON.parse(String(data));
+        const ev = JSON.parse((data as Buffer).toString());
         if (ev && typeof ev.type === 'string') this.emit('event', ev);
       } catch (e) {
         this.log.warn({ err: e }, 'ARI: failed to parse event');

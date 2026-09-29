@@ -50,8 +50,7 @@ describe('CallMonitor', () => {
   it('starts a session when 222 answers and is bridged', async () => {
     ari.addChannel(ch('Up'));
     ari.vars.set('1695.10', { BRIDGEPEER: 'PJSIP/trunk-00000009' });
-    events.push({ type: 'ChannelStateChange', channel: ch('Ringing') });
-    events.push({ type: 'ChannelStateChange', channel: ch('Up') });
+    events.push({ type: 'ChannelStateChange', channel: ch('Ringing') }, { type: 'ChannelStateChange', channel: ch('Up') });
     await tick(20);
     expect(started).toHaveLength(1);
     expect(started[0]).toMatchObject({ channelId: '1695.10', extension: '222', remote: { number: '+447700900123', name: 'Bob' } });
@@ -64,8 +63,7 @@ describe('CallMonitor', () => {
   });
 
   it('does not start while ringing without answer', async () => {
-    events.push({ type: 'ChannelStateChange', channel: ch('Ringing') });
-    events.push({ type: 'ChannelDestroyed', channel: ch('Ringing') });
+    events.push({ type: 'ChannelStateChange', channel: ch('Ringing') }, { type: 'ChannelDestroyed', channel: ch('Ringing') });
     await tick(20);
     expect(started).toHaveLength(0);
     expect(ended).toHaveLength(0);
@@ -79,17 +77,18 @@ describe('CallMonitor', () => {
 
   it('dedupes repeated events for the same channel', async () => {
     ari.vars.set('1695.10', { BRIDGEPEER: 'PJSIP/trunk-9' });
-    events.push({ type: 'ChannelStateChange', channel: ch('Up') });
-    events.push({ type: 'ChannelStateChange', channel: ch('Up') });
-    events.push({ type: 'ChannelEnteredBridge', channel: ch('Up'), bridge: { id: 'b1', channels: ['1695.10', 'x'] } });
-    events.push({ type: 'Dial', peer: ch('Up'), dialstatus: 'ANSWER' });
+    events.push(
+      { type: 'ChannelStateChange', channel: ch('Up') },
+      { type: 'ChannelStateChange', channel: ch('Up') },
+      { type: 'ChannelEnteredBridge', channel: ch('Up'), bridge: { id: 'b1', channels: ['1695.10', 'x'] } },
+      { type: 'Dial', peer: ch('Up'), dialstatus: 'ANSWER' },
+    );
     await tick(20);
     expect(started).toHaveLength(1);
   });
 
   it('ends the session on hangup', async () => {
-    events.push({ type: 'ChannelEnteredBridge', channel: ch('Up'), bridge: { id: 'b1', channels: ['1695.10', 'x'] } });
-    events.push({ type: 'ChannelDestroyed', channel: ch('Up') });
+    events.push({ type: 'ChannelEnteredBridge', channel: ch('Up'), bridge: { id: 'b1', channels: ['1695.10', 'x'] } }, { type: 'ChannelDestroyed', channel: ch('Up') });
     await tick(1);
     expect(ended).toEqual([['1695.10', 'hangup']]);
   });
@@ -107,8 +106,10 @@ describe('CallMonitor', () => {
   });
 
   it('ignores other extensions and own liveai- channels', async () => {
-    events.push({ type: 'ChannelEnteredBridge', channel: ch('Up', '1', 'PJSIP/2220-01'), bridge: { id: 'b', channels: ['1', '2'] } });
-    events.push({ type: 'ChannelEnteredBridge', channel: ch('Up', 'liveai-x', 'PJSIP/222-01'), bridge: { id: 'b', channels: ['1', '2'] } });
+    events.push(
+      { type: 'ChannelEnteredBridge', channel: ch('Up', '1', 'PJSIP/2220-01'), bridge: { id: 'b', channels: ['1', '2'] } },
+      { type: 'ChannelEnteredBridge', channel: ch('Up', 'liveai-x', 'PJSIP/222-01'), bridge: { id: 'b', channels: ['1', '2'] } },
+    );
     await tick(1);
     expect(started).toHaveLength(0);
   });

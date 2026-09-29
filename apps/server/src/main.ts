@@ -92,7 +92,9 @@ async function main() {
   process.on('SIGINT', () => void stop('SIGINT'));
 }
 
-main().catch((err) => {
+try {
+  await main();
+} catch (err) {
   console.error(err);
   process.exit(1);
-});
+}

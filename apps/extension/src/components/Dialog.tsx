@@ -4,7 +4,7 @@ import type { SessionView } from '../lib/reducer';
 
 const STICK_THRESHOLD_PX = 40;
 
-export function Dialog({ session, labels }: { session: SessionView; labels: Record<Side, string> }) {
+export function Dialog({ session, labels }: { readonly session: SessionView; readonly labels: Record<Side, string> }) {
   const ref = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState(true);
   const lastText = session.items.at(-1)?.text;
@@ -74,7 +74,19 @@ export function Dialog({ session, labels }: { session: SessionView; labels: Reco
   );
 }
 
-function Bubble({ side, label, ts, text, partial }: { side: Side; label: string; ts: string; text: string; partial: boolean }) {
+function Bubble({
+  side,
+  label,
+  ts,
+  text,
+  partial,
+}: {
+  readonly side: Side;
+  readonly label: string;
+  readonly ts: string;
+  readonly text: string;
+  readonly partial: boolean;
+}) {
   const agent = side === 'agent';
   const time = new Date(ts).toTimeString().slice(0, 8);
   return (
