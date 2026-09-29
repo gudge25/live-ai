@@ -12,11 +12,11 @@ const CONN_STYLE: Record<ConnectionState, { dot: string; label: string }> = {
 };
 
 interface Props {
-  conn: { state: ConnectionState; detail?: string };
-  sessions: SessionView[];
-  selected?: SessionView;
-  onSelect: (id: string) => void;
-  onSettings: () => void;
+  readonly conn: { state: ConnectionState; detail?: string };
+  readonly sessions: SessionView[];
+  readonly selected?: SessionView;
+  readonly onSelect: (id: string) => void;
+  readonly onSettings: () => void;
 }
 
 export function Header({ conn, sessions, selected, onSelect, onSettings }: Props) {
@@ -77,7 +77,7 @@ export function Header({ conn, sessions, selected, onSelect, onSettings }: Props
   );
 }
 
-function Duration({ start, end }: { start: string; end?: string }) {
+function Duration({ start, end }: { readonly start: string; readonly end?: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (end) return;

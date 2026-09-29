@@ -1,4 +1,4 @@
-import type { SessionInfo, SessionSnapshot, Side, Utterance } from '@live-ai/shared';
+import type { SessionInfo, SessionSnapshot, Utterance } from '@live-ai/shared';
 
 /** In-memory sessions with their final utterances; keeps at most `historyLimit` ended sessions. */
 export class SessionStore {
@@ -58,4 +58,4 @@ export class SessionStore {
   }
 }
 
-export type { Side };
+export type { Side } from '@live-ai/shared';

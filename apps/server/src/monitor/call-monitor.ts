@@ -1,6 +1,14 @@
 import { EventEmitter } from 'node:events';
 import type { AriApi } from '../ari/rest.js';
-import { isBridgeChannelEvent, isChannelEvent, isDialEvent, type AriChannel } from '../ari/types.js';
+import {
+  isBridgeChannelEvent,
+  isChannelEvent,
+  isDialEvent,
+  type AriChannel,
+  type BridgeChannelEvent,
+  type ChannelEvent,
+  type DialEvent,
+} from '../ari/types.js';
 import type { Logger } from '../logger.js';
 
 /** Prefix for every ARI resource this service creates. */
@@ -107,22 +115,30 @@ export class CallMonitor extends EventEmitter<CallMonitorEvents> {
   }
 
   private async onEvent(ev: Record<string, unknown> & { type: string }): Promise<void> {
-    if (isChannelEvent(ev)) {
-      if (!this.extensionOf(ev.channel)) return;
-      if (ev.type === 'ChannelStateChange' && ev.channel.state === 'Up') await this.tryStart(ev.channel);
-      else if (ev.type === 'ChannelDestroyed') this.finish(ev.channel.id, 'hangup');
-    } else if (isBridgeChannelEvent(ev)) {
-      if (!this.extensionOf(ev.channel)) return;
-      if (ev.type === 'ChannelEnteredBridge') {
-        const others = ev.bridge.channels.filter((id) => id !== ev.channel.id);
-        if (ev.channel.state === 'Up' && others.length > 0) this.activate(ev.channel);
-        else if (ev.channel.state === 'Up') await this.tryStart(ev.channel);
-      } else {
-        await this.onLeftBridge(ev.channel.id);
-      }
-    } else if (isDialEvent(ev)) {
-      if (ev.dialstatus === 'ANSWER' && this.extensionOf(ev.peer)) await this.tryStart(ev.peer);
+    if (isChannelEvent(ev)) await this.onChannelEvent(ev);
+    else if (isBridgeChannelEvent(ev)) await this.onBridgeChannelEvent(ev);
+    else if (isDialEvent(ev)) await this.onDialEvent(ev);
+  }
+
+  private async onChannelEvent(ev: ChannelEvent): Promise<void> {
+    if (!this.extensionOf(ev.channel)) return;
+    if (ev.type === 'ChannelStateChange' && ev.channel.state === 'Up') await this.tryStart(ev.channel);
+    else if (ev.type === 'ChannelDestroyed') this.finish(ev.channel.id, 'hangup');
+  }
+
+  private async onBridgeChannelEvent(ev: BridgeChannelEvent): Promise<void> {
+    if (!this.extensionOf(ev.channel)) return;
+    if (ev.type !== 'ChannelEnteredBridge') {
+      await this.onLeftBridge(ev.channel.id);
+      return;
     }
+    const others = ev.bridge.channels.filter((id) => id !== ev.channel.id);
+    if (ev.channel.state === 'Up' && others.length > 0) this.activate(ev.channel);
+    else if (ev.channel.state === 'Up') await this.tryStart(ev.channel);
+  }
+
+  private async onDialEvent(ev: DialEvent): Promise<void> {
+    if (ev.dialstatus === 'ANSWER' && this.extensionOf(ev.peer)) await this.tryStart(ev.peer);
   }
 
   private async tryStart(ch: AriChannel): Promise<void> {
@@ -130,7 +146,7 @@ export class CallMonitor extends EventEmitter<CallMonitorEvents> {
     this.tracked.set(ch.id, { state: 'pending' });
     for (let i = 0; i < this.attempts; i++) {
       const t = this.tracked.get(ch.id);
-      if (!t || t.state !== 'pending') return; // activated by a bridge event, or destroyed
+      if (t?.state !== 'pending') return; // activated by a bridge event, or destroyed
       try {
         const peer = await this.o.api.getChannelVar(ch.id, 'BRIDGEPEER');
         if (peer) {

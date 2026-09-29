@@ -20,7 +20,7 @@ export function Options() {
     void loadSettings().then(setForm);
   }, []);
 
-  const save = async (e: React.FormEvent) => {
+  const save = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       buildSocketUrl(form);

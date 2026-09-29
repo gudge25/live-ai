@@ -64,7 +64,7 @@ describe('reducer', () => {
       ],
       before,
     );
-    expect(Object.keys(st.sessions).sort()).toEqual(['a', 'b']);
+    expect(Object.keys(st.sessions).toSorted((a, b) => a.localeCompare(b))).toEqual(['a', 'b']);
     expect(st.order).toEqual(['b', 'a']);
     expect(st.selectedId).toBe('a');
     expect(st.ari).toBe('connected');

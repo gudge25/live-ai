@@ -87,8 +87,8 @@ export class FakeAri implements AriApi {
 }
 
 export class FakeEvents extends EventEmitter {
-  push(ev: Record<string, unknown> & { type: string }) {
-    this.emit('event', ev);
+  push(...evs: (Record<string, unknown> & { type: string })[]) {
+    for (const ev of evs) this.emit('event', ev);
   }
   reconnect() {
     this.emit('connected');

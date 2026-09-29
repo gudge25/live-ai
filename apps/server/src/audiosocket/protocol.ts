@@ -40,7 +40,7 @@ export function encodeFrame(kind: number, payload: Buffer = Buffer.alloc(0)): Bu
 }
 
 export function uuidToBytes(uuid: string): Buffer {
-  const hex = uuid.replace(/-/g, '');
+  const hex = uuid.replaceAll('-', '');
   if (!/^[0-9a-f]{32}$/i.test(hex)) throw new Error(`invalid uuid: ${uuid}`);
   return Buffer.from(hex, 'hex');
 }

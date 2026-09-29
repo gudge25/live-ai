@@ -72,7 +72,7 @@ describe('UiServer', () => {
     const msgs: ServerEvent[] = [];
     const waiters: (() => void)[] = [];
     ws.on('message', (d) => {
-      msgs.push(JSON.parse(String(d)));
+      msgs.push(JSON.parse((d as Buffer).toString()));
       waiters.splice(0).forEach((w) => w());
     });
     const next = (n: number) =>

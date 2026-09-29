@@ -23,6 +23,21 @@ describe('FrameParser', () => {
   });
 });
 
+function recordingSink() {
+  const audio: Buffer[] = [];
+  let endReason: string | undefined;
+  let resolveEnd!: () => void;
+  const endedP = new Promise<void>((r) => (resolveEnd = r));
+  const sink: AudioSink = {
+    onAudio: (b) => audio.push(Buffer.from(b)),
+    onEnd: (r) => {
+      endReason = r;
+      resolveEnd();
+    },
+  };
+  return { sink, audio, ended: endedP, reason: () => endReason };
+}
+
 describe('AudioSocketServer', () => {
   let server: AudioSocketServer;
   let port: number;
@@ -37,21 +52,6 @@ describe('AudioSocketServer', () => {
       const s = connect(port, '127.0.0.1', () => resolve(s));
     });
   const closed = (s: Socket) => new Promise<void>((r) => s.on('close', () => r()));
-
-  function recordingSink() {
-    const audio: Buffer[] = [];
-    let endReason: string | undefined;
-    let resolveEnd!: () => void;
-    const endedP = new Promise<void>((r) => (resolveEnd = r));
-    const sink: AudioSink = {
-      onAudio: (b) => audio.push(Buffer.from(b)),
-      onEnd: (r) => {
-        endReason = r;
-        resolveEnd();
-      },
-    };
-    return { sink, audio, ended: endedP, reason: () => endReason };
-  }
 
   it('routes audio by UUID and reports hangup', async () => {
     const uuid = randomUUID();
