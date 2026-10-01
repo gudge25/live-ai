@@ -47,7 +47,11 @@ export const resourceId = (sessionId: string, kind: 'snoop' | 'em' | 'br', side:
 export class TapOrchestrator {
   private readonly active = new Map<string, TapHandle>();
 
-  constructor(private readonly o: TapOptions) {}
+  constructor(private readonly o: TapOptions) {
+    // Each in-flight channel wait holds a transient listener on this (shared, long-lived)
+    // emitter; raise the cap so a burst of concurrent calls doesn't trip Node's default of 10.
+    o.events.setMaxListeners?.(50);
+  }
 
   async attach(sessionId: string, channelId: string, sinks: Record<Side, AudioSink>): Promise<TapHandle> {
     const h: TapHandle = { sessionId, channels: [], bridges: [], uuids: [] };
@@ -62,21 +66,14 @@ export class TapOrchestrator {
         h.bridges.push(br.id);
 
         const snoopId = resourceId(sessionId, 'snoop', side);
-        const snoopInStasis = this.waitForStasisStart(snoopId);
-        const snoop = await this.o.api.snoopChannel(channelId, { snoopId, spy: SPY[side] });
-        h.channels.push(snoop.id);
-        await snoopInStasis;
-
         const emId = resourceId(sessionId, 'em', side);
-        const emInStasis = this.waitForStasisStart(emId);
-        const em = await this.o.api.createExternalMedia({
-          channelId: emId,
-          externalHost: this.o.advertiseHost,
-          data: uuid,
-          format: this.o.format ?? 'slin',
-        });
-        h.channels.push(em.id);
-        await emInStasis;
+        // Independent of each other; only the final addChannel call needs both results.
+        const [snoop, em] = await Promise.all([
+          this.createStasisChannel(h, snoopId, () => this.o.api.snoopChannel(channelId, { snoopId, spy: SPY[side] })),
+          this.createStasisChannel(h, emId, () =>
+            this.o.api.createExternalMedia({ channelId: emId, externalHost: this.o.advertiseHost, data: uuid, format: this.o.format ?? 'slin' }),
+          ),
+        ]);
 
         // Only now are both channels confirmed to be in the Stasis app; addChannel on a
         // channel that hasn't entered Stasis yet gets rejected with 422 by Asterisk.
@@ -92,29 +89,58 @@ export class TapOrchestrator {
   }
 
   /**
-   * Resolves once Asterisk reports `channelId` as having entered the Stasis app, or after
-   * `stasisTimeoutMs` elapses, whichever comes first. The listener is registered before the
-   * caller issues the channel-creating request, so it can't miss an event that arrives early.
+   * Creates a Stasis-bound channel (snoop or externalMedia) and waits for Asterisk to confirm,
+   * via `StasisStart`, that it actually entered the app before returning it. If `create` itself
+   * throws, the wait is cancelled immediately rather than left to linger until its timeout.
    */
-  private waitForStasisStart(channelId: string): Promise<void> {
+  private async createStasisChannel<T extends { id: string }>(h: TapHandle, channelId: string, create: () => Promise<T>): Promise<T> {
+    const wait = this.waitForStasisStart(channelId);
+    let ch: T;
+    try {
+      ch = await create();
+    } catch (err) {
+      wait.cancel();
+      throw err;
+    }
+    h.channels.push(ch.id); // record it for rollback even if the Stasis confirmation below times out
+    await wait.promise;
+    return ch;
+  }
+
+  /**
+   * Resolves once Asterisk reports `channelId` as having entered the Stasis app, or rejects if
+   * `stasisTimeoutMs` elapses first — proceeding without confirmation would risk the exact 422
+   * "Channel not in Stasis application" this wait exists to avoid. The listener is registered
+   * before the caller issues the channel-creating request, so it can't miss an event that
+   * arrives early. `cancel()` tears the listener/timer down without settling either way, for
+   * when the owning request failed and the wait's outcome no longer matters.
+   */
+  private waitForStasisStart(channelId: string): { promise: Promise<void>; cancel: () => void } {
     const timeoutMs = this.o.stasisTimeoutMs ?? 2000;
-    return new Promise((resolve) => {
+    let settle!: (err?: Error) => void;
+    const promise = new Promise<void>((resolve, reject) => {
       const onEvent = (ev: Record<string, unknown> & { type: string }) => {
         const channel = (ev as { channel?: { id?: string } }).channel;
-        if (ev.type === 'StasisStart' && channel?.id === channelId) finish();
+        if (ev.type === 'StasisStart' && channel?.id === channelId) settle();
       };
-      const finish = () => {
+      const timer = setTimeout(
+        () => settle(new Error(`channel ${channelId} did not report StasisStart within ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+      timer.unref?.();
+      settle = (err) => {
         clearTimeout(timer);
         this.o.events.off('event', onEvent);
-        resolve();
+        if (err) reject(err);
+        else resolve();
       };
-      const timer = setTimeout(() => {
-        this.o.log.warn({ channelId }, 'StasisStart not observed before timeout, adding to bridge anyway');
-        finish();
-      }, timeoutMs);
-      timer.unref?.();
       this.o.events.on('event', onEvent);
     });
+    // The real rejection is still observed by whoever awaits `promise`; this just keeps Node
+    // from logging it as unhandled during the window before that `await` runs (`create()` can
+    // itself take longer than `stasisTimeoutMs`, so the timeout can fire first).
+    promise.catch(() => {});
+    return { promise, cancel: () => settle() };
   }
 
   async detach(sessionId: string): Promise<void> {
