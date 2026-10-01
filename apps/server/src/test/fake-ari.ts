@@ -12,6 +12,8 @@ export class FakeAri implements AriApi {
   bridges = new Map<string, AriBridge>();
   vars = new Map<string, Record<string, string>>();
   failOn = new Map<string, Error>();
+  /** When set, new Stasis channels (snoop/externalMedia) emit a matching StasisStart, like real Asterisk. */
+  events?: FakeEvents;
 
   private rec(op: string, ...args: unknown[]) {
     this.calls.push({ op, args });
@@ -57,11 +59,15 @@ export class FakeAri implements AriApi {
   }
   async snoopChannel(channelId: string, p: { snoopId: string; spy: 'in' | 'out' | 'both' }) {
     this.rec('snoopChannel', channelId, p);
-    return this.addChannel({ id: p.snoopId, name: `Snoop/${channelId}` });
+    const ch = this.addChannel({ id: p.snoopId, name: `Snoop/${channelId}` });
+    this.events?.emit('event', { type: 'StasisStart', channel: ch });
+    return ch;
   }
   async createExternalMedia(p: { channelId: string; externalHost: string; data: string; format: string }) {
     this.rec('createExternalMedia', p);
-    return this.addChannel({ id: p.channelId, name: `AudioSocket/${p.externalHost}` });
+    const ch = this.addChannel({ id: p.channelId, name: `AudioSocket/${p.externalHost}` });
+    this.events?.emit('event', { type: 'StasisStart', channel: ch });
+    return ch;
   }
   async createBridge(p: { bridgeId: string; name: string }) {
     this.rec('createBridge', p);

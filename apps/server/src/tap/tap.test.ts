@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AriHttpError } from '../ari/rest.js';
 import type { AudioSink } from '../audiosocket/server.js';
-import { FakeAri } from '../test/fake-ari.js';
+import { FakeAri, FakeEvents } from '../test/fake-ari.js';
 import { silentLog } from '../test/log.js';
 import { TapError, TapOrchestrator } from './tap.js';
 
@@ -9,16 +9,20 @@ const sink: AudioSink = { onAudio() {}, onEnd() {} };
 const sinks = { agent: sink, caller: sink };
 
 let ari: FakeAri;
+let events: FakeEvents;
 let registered: Set<string>;
 let tap: TapOrchestrator;
 
 beforeEach(() => {
   ari = new FakeAri();
   ari.addChannel({ id: '1695.10', name: 'PJSIP/222-0000000a' });
+  events = new FakeEvents();
+  ari.events = events;
   registered = new Set();
   tap = new TapOrchestrator({
     api: ari,
     audio: { register: (u) => registered.add(u), unregister: (u) => registered.delete(u) },
+    events,
     advertiseHost: '10.0.0.5:9092',
     log: silentLog,
   });

@@ -54,7 +54,7 @@ export class LiveAiApp {
 
   constructor(private readonly o: AppOptions) {
     this.monitor = new CallMonitor({ api: o.api, events: o.events, extensions: o.extensions, tech: o.tech, log: o.log, ...o.monitor });
-    this.tap = new TapOrchestrator({ api: o.api, audio: o.audio, advertiseHost: o.advertiseHost, log: o.log });
+    this.tap = new TapOrchestrator({ api: o.api, audio: o.audio, events: o.events, advertiseHost: o.advertiseHost, log: o.log });
     this.monitor.on('start', (c) => this.onStart(c));
     this.monitor.on('end', (id) => void this.onEnd(id));
     o.events.on('status', (s) => {

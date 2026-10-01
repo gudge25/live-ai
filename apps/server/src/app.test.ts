@@ -28,6 +28,7 @@ beforeEach(async () => {
   ari = new FakeAri();
   ari.addChannel(agentChannel);
   events = new FakeEvents();
+  ari.events = events;
   audio = new AudioSocketServer(silentLog);
   port = await audio.listen(0, '127.0.0.1');
   sdks = [];

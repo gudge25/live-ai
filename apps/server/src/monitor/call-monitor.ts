@@ -33,6 +33,7 @@ export interface CallMonitorEvents {
 export interface AriEventSource {
   on(event: 'event', l: (ev: Record<string, unknown> & { type: string }) => void): unknown;
   on(event: 'connected', l: () => void): unknown;
+  off(event: 'event', l: (ev: Record<string, unknown> & { type: string }) => void): unknown;
 }
 
 export interface CallMonitorOptions {
