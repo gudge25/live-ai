@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AriHttpError } from '../ari/rest.js';
 import type { AudioSink } from '../audiosocket/server.js';
-import { FakeAri } from '../test/fake-ari.js';
+import { FakeAri, FakeEvents } from '../test/fake-ari.js';
 import { silentLog } from '../test/log.js';
 import { TapError, TapOrchestrator } from './tap.js';
 
@@ -9,16 +9,20 @@ const sink: AudioSink = { onAudio() {}, onEnd() {} };
 const sinks = { agent: sink, caller: sink };
 
 let ari: FakeAri;
+let events: FakeEvents;
 let registered: Set<string>;
 let tap: TapOrchestrator;
 
 beforeEach(() => {
   ari = new FakeAri();
   ari.addChannel({ id: '1695.10', name: 'PJSIP/222-0000000a' });
+  events = new FakeEvents();
+  ari.events = events;
   registered = new Set();
   tap = new TapOrchestrator({
     api: ari,
     audio: { register: (u) => registered.add(u), unregister: (u) => registered.delete(u) },
+    events,
     advertiseHost: '10.0.0.5:9092',
     log: silentLog,
   });
@@ -85,6 +89,30 @@ describe('TapOrchestrator cleanup', () => {
   it('is a no-op for unknown sessions', async () => {
     await tap.detach('nope');
     expect(ari.calls).toHaveLength(0);
+  });
+
+  it('fails attach and rolls back if a channel never reports StasisStart', async () => {
+    const quietAri = new FakeAri();
+    quietAri.addChannel({ id: '1695.10', name: 'PJSIP/222-0000000a' });
+    // Deliberately not wired to any events source, so snoop/em channels never get a StasisStart.
+    const quietTap = new TapOrchestrator({
+      api: quietAri,
+      audio: { register: () => {}, unregister: () => {} },
+      events: new FakeEvents(),
+      advertiseHost: '10.0.0.5:9092',
+      stasisTimeoutMs: 5,
+      log: silentLog,
+    });
+
+    await expect(quietTap.attach('s1', '1695.10', sinks)).rejects.toBeInstanceOf(TapError);
+    expect([...quietAri.channels.keys()]).toEqual(['1695.10']); // only the original call remains
+    expect(quietAri.bridges.size).toBe(0);
+  });
+
+  it('cancels a channel\'s StasisStart wait immediately when its own creation fails, rather than leaving the listener until the timeout', async () => {
+    ari.failOn.set('createExternalMedia', new AriHttpError(500, 'POST', '/channels/externalMedia', 'boom'));
+    await expect(tap.attach('s1', '1695.10', sinks)).rejects.toBeInstanceOf(TapError);
+    expect(events.listenerCount('event')).toBe(0);
   });
 
   it('removes orphaned liveai- resources but not in-use or foreign ones', async () => {

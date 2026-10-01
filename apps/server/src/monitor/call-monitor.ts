@@ -33,6 +33,9 @@ export interface CallMonitorEvents {
 export interface AriEventSource {
   on(event: 'event', l: (ev: Record<string, unknown> & { type: string }) => void): unknown;
   on(event: 'connected', l: () => void): unknown;
+  off(event: 'event', l: (ev: Record<string, unknown> & { type: string }) => void): unknown;
+  /** Raise Node's default listener cap: many short-lived tap waits can share this emitter under concurrent calls. */
+  setMaxListeners?(n: number): unknown;
 }
 
 export interface CallMonitorOptions {
