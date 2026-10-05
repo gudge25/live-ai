@@ -42,8 +42,10 @@ export class UiServer {
   constructor(private readonly o: UiServerOptions) {
     this.http = createServer((req, res) => {
       if (req.url === '/healthz') {
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, ari: o.ariStatus(), activeSessions: o.store.activeCount }));
+        const ari = o.ariStatus();
+        const ok = ari === 'connected';
+        res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok, ari, activeSessions: o.store.activeCount }));
         return;
       }
       res.writeHead(404).end();
