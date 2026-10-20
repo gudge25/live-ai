@@ -83,6 +83,14 @@ export class UiServer {
     await new Promise<void>((r) => this.http.close(() => r()));
   }
 
+  /** True if at least one open client would receive events for `extension` (no subscription filter = all). */
+  hasViewer(extension: string): boolean {
+    for (const c of this.clients) {
+      if (c.ws.readyState === WebSocket.OPEN && (!c.extensions.size || c.extensions.has(extension))) return true;
+    }
+    return false;
+  }
+
   /** Send to every client subscribed to the session's extension (or all for global events). */
   broadcast(ev: ServerEvent, extension?: string): void {
     const data = JSON.stringify(ev);

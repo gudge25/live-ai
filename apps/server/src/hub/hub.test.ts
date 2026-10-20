@@ -118,6 +118,20 @@ describe('UiServer', () => {
     q.ws.close();
   });
 
+  it('hasViewer is true only while an open client covers the extension', async () => {
+    expect(ui.hasViewer('222')).toBe(false);
+    const all = connect(`token=${TOKEN}`);
+    await all.next(1);
+    expect(ui.hasViewer('222')).toBe(true);
+    all.ws.close();
+    await new Promise((r) => all.ws.on('close', r));
+    const only223 = connect(`token=${TOKEN}&ext=223`);
+    await only223.next(1);
+    expect(ui.hasViewer('222')).toBe(false);
+    expect(ui.hasViewer('223')).toBe(true);
+    only223.ws.close();
+  });
+
   it('serves /healthz', async () => {
     const r = await fetch(`http://127.0.0.1:${port}/healthz`);
     expect(await r.json()).toEqual({ ok: true, ari: 'connected', activeSessions: 0 });

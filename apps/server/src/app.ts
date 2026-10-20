@@ -13,6 +13,8 @@ import type { SdkTranscriber } from './transcription/streaming-session.js';
 
 export interface Broadcaster {
   broadcast(ev: ServerEvent, extension?: string): void;
+  /** When present, calls are only tapped and transcribed while someone is watching their extension. */
+  hasViewer?(extension: string): boolean;
 }
 
 export interface AppOptions {
@@ -79,6 +81,11 @@ export class LiveAiApp {
 
   private onStart(call: MonitoredCall): void {
     if (this.live.has(call.channelId)) return;
+    // No point paying for transcription, or adding snoop/bridge channels to the PBX, for a call nobody is watching.
+    if (this.ui?.hasViewer && !this.ui.hasViewer(call.extension)) {
+      this.o.log.debug({ channel: call.channelId, ext: call.extension }, 'no UI client watching this extension, not transcribing');
+      return;
+    }
     if (this.live.size >= this.o.maxConcurrent) {
       this.o.log.warn({ channel: call.channelId, limit: this.o.maxConcurrent }, 'concurrent session limit reached, not transcribing');
       return;
