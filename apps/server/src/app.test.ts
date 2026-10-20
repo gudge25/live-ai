@@ -119,6 +119,26 @@ describe('LiveAiApp end-to-end (fake Asterisk + fake AssemblyAI)', () => {
     expect(store.snapshot()[0]).toMatchObject({ state: 'ended', utterances: [{ text: 'Hi, I have a question.' }] });
   });
 
+  it('does not tap or transcribe a call while no UI client is watching its extension', async () => {
+    let watching = false;
+    app.attachUi({ broadcast: (ev) => sent.push(ev), hasViewer: () => watching });
+
+    events.push(bridged);
+    await tick(20);
+    expect(sdks).toHaveLength(0);
+    expect(ari.calls.some((c) => c.op === 'snoopChannel' || c.op === 'createExternalMedia')).toBe(false);
+    expect(sent).toEqual([]);
+
+    // A viewer arriving later does not retroactively start the call already in progress, but the next call is picked up.
+    watching = true;
+    events.push({ type: 'ChannelDestroyed', channel: agentChannel });
+    await tick(20);
+    events.push(bridged);
+    await tick(20);
+    expect(sdks).toHaveLength(2);
+    expect(sent[0]).toMatchObject({ type: 'session_started' });
+  });
+
   it('requests and broadcasts a summary when the feature is enabled and there is a transcript', async () => {
     summaryEnabled = true;
     events.push(bridged);
