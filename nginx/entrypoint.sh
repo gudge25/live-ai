@@ -36,8 +36,27 @@ valid_ip() {
   case $v in */*) pfx=${v#*/}; [ -n "$pfx" ] || return 1 ;; esac
   case $addr in
     *:*)
-      printf '%s' "$addr" | grep -Eq '^[0-9A-Fa-f:.]+$' || return 1
-      [ "$(printf '%s' "$addr" | tr -cd ':' | wc -c)" -ge 2 ] || return 1
+      # IPv6: hex groups of 1-4 digits, either exactly 8 groups or one "::" with
+      # at most 7 groups around it. (Embedded dotted IPv4 is not accepted.)
+      printf '%s' "$addr" | awk '{
+        a = $0
+        if (a ~ /[^0-9A-Fa-f:]/ || a ~ /:::/) exit 1
+        i = index(a, "::")
+        if (i) {
+          rest = substr(a, i + 2)
+          if (index(rest, "::")) exit 1
+          left = substr(a, 1, i - 1)
+          nl = (left == "") ? 0 : split(left, L, ":")
+          nr = (rest == "") ? 0 : split(rest, R, ":")
+          if (nl + nr > 7) exit 1
+          for (k = 1; k <= nl; k++) if (L[k] !~ /^[0-9A-Fa-f]{1,4}$/) exit 1
+          for (k = 1; k <= nr; k++) if (R[k] !~ /^[0-9A-Fa-f]{1,4}$/) exit 1
+        } else {
+          n = split(a, G, ":")
+          if (n != 8) exit 1
+          for (k = 1; k <= n; k++) if (G[k] !~ /^[0-9A-Fa-f]{1,4}$/) exit 1
+        }
+      }' || return 1
       max=128 ;;
     *)
       printf '%s' "$addr" | awk -F. 'NF != 4 { exit 1 } { for (i = 1; i <= 4; i++) if ($i !~ /^[0-9]{1,3}$/ || $i + 0 > 255) exit 1 }' || return 1
@@ -98,17 +117,27 @@ render() {
     [ "$n" -gt 0 ] || echo "# WARNING: no PBX_ALLOWED_IPS / PBX_ALLOWED_HOSTS set — AudioSocket port rejects everyone"
     echo "deny all;"
   } > "$R/allow.conf.new"
-  if install_if_changed "$R/allow.conf.new" "$R/allow.conf"; then changed=0; fi
+  # allow.gen is the raw generated list; allow.conf is what nginx uses (possibly pruned
+  # by check_config), so a pruned entry doesn't look like a change on every tick.
+  if install_if_changed "$R/allow.conf.new" "$R/allow.gen"; then cp "$R/allow.gen" "$R/allow.conf"; changed=0; fi
 
   return $changed
 }
 
-# If the generated config is still rejected by nginx (e.g. an exotic IPv6 typo),
-# fall back to a deny-all allow list instead of leaving the whole edge down.
+# If nginx still rejects the generated config, find the offending allow entries
+# one by one and drop only those — valid entries keep working.
 check_config() {
   if nginx -t >/dev/null 2>&1; then return 0; fi
-  log "nginx -t rejected the generated config — falling back to deny-all for AudioSocket"
-  printf '# fallback: generated allow list was rejected by nginx\ndeny all;\n' > "$R/allow.conf"
+  log "nginx -t rejected the generated config — testing allow entries one by one"
+  {
+    echo "# generated; entries nginx rejected were dropped"
+    grep '^allow ' "$R/allow.gen" | while IFS= read -r line; do
+      printf '%s\ndeny all;\n' "$line" > "$R/allow.conf"
+      if nginx -t >/dev/null 2>&1; then echo "$line"; else log "dropping entry nginx rejects: $line"; fi
+    done
+    echo "deny all;"
+  } > "$R/allow.pruned"
+  mv "$R/allow.pruned" "$R/allow.conf"
   nginx -t >&2
 }
 
