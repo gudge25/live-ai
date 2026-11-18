@@ -12,17 +12,25 @@ NGINX_UID="${NGINX_UID:-101}"
 
 # certbot keeps privkey.pem root-only; nginx runs as uid 101, so hand it its own
 # copy. Run by certbot after every issuance/renewal, and once at startup below.
+# Cert + key are published as ONE versioned directory and a `current` symlink is
+# switched atomically, so nginx can never read a new cert next to an old key.
 cat > /tmp/deploy-hook.sh <<'HOOK'
 #!/bin/sh
 set -eu
 src="${RENEWED_LINEAGE:?}"
-for f in fullchain.pem privkey.pem; do
-  cp -L "$src/$f" "$NGINX_CERTS/.$f.new"
-  chown "$NGINX_UID:$NGINX_UID" "$NGINX_CERTS/.$f.new"
-  chmod 600 "$NGINX_CERTS/.$f.new"
-  mv "$NGINX_CERTS/.$f.new" "$NGINX_CERTS/$f"
-done
-echo "[certbot] copied renewed certificate for nginx" >&2
+ver="v$(date +%s)-$$"
+new="$NGINX_CERTS/$ver"
+mkdir "$new"
+cp -L "$src/fullchain.pem" "$src/privkey.pem" "$new/"
+chown -R "$NGINX_UID:$NGINX_UID" "$new"
+chmod 755 "$new"
+chmod 600 "$new"/fullchain.pem "$new"/privkey.pem
+ln -s "$ver" "$NGINX_CERTS/.current.new"
+mv -T "$NGINX_CERTS/.current.new" "$NGINX_CERTS/current"   # atomic rename(2)
+# prune old versions: never the one `current` points to, plus keep one previous
+cur=$(readlink "$NGINX_CERTS/current")
+ls -1d "$NGINX_CERTS"/v* | grep -v "/$cur\$" | sort -r | tail -n +2 | xargs -r rm -rf
+echo "[certbot] published certificate $ver for nginx" >&2
 HOOK
 chmod +x /tmp/deploy-hook.sh
 export NGINX_CERTS NGINX_UID

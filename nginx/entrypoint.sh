@@ -15,8 +15,10 @@ PBX_ALLOWED_HOSTS="${PBX_ALLOWED_HOSTS:-}"
 R=/tmp/rendered
 DUMMY=/tmp/dummy
 DNS_CACHE=/tmp/pbx-dns
-# Readable copy of the Let's Encrypt cert, written by certbot's deploy hook.
-REAL=/certs
+# Readable copy of the Let's Encrypt cert, published by certbot's deploy hook as a
+# versioned dir behind an atomically switched `current` symlink.
+CERT_ROOT=/certs
+REAL=$CERT_ROOT/current
 mkdir -p "$R" "$DUMMY" "$DNS_CACHE"
 
 log() { echo "[entrypoint] $*" >&2; }
@@ -53,11 +55,14 @@ render() {
   changed=1  # 1 = nothing changed (shell convention: 0 = true)
 
   # ---- TLS include ----
-  if [ -s "$REAL/fullchain.pem" ] && [ -s "$REAL/privkey.pem" ]; then
-    crt="$REAL/fullchain.pem"; key="$REAL/privkey.pem"
-    # Renewal swaps file content behind the same symlink path: fold its
-    # checksum into the include so a new cert also counts as a change.
-    sig=$(cksum "$crt" | cut -d' ' -f1,2)
+  # certbot publishes each cert+key pair as an immutable version dir and flips the
+  # `current` symlink. Resolve it ONCE here and point nginx at the version dir
+  # itself: nginx opens cert and key as two separate paths, so going through the
+  # moving symlink could pair a new cert with an old key. A new version name also
+  # counts as a change (it covers cert and key together).
+  ver=$(readlink "$REAL" 2>/dev/null || true)
+  if [ -n "$ver" ] && [ -s "$CERT_ROOT/$ver/fullchain.pem" ] && [ -s "$CERT_ROOT/$ver/privkey.pem" ]; then
+    crt="$CERT_ROOT/$ver/fullchain.pem"; key="$CERT_ROOT/$ver/privkey.pem"; sig=$ver
   else
     crt="$DUMMY/cert.pem"; key="$DUMMY/key.pem"; sig=placeholder
   fi
