@@ -50,7 +50,7 @@ Running behind NAT with a remote PBX: open a reverse SSH tunnel for AudioSocket 
 ssh -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes -R 127.0.0.1:9092:127.0.0.1:9092 <user>@<pbx>
 ```
 
-Public server with TLS: `docker-compose-nginx.yml` puts nginx in front as the only exposed service — `wss://<PUBLIC_DOMAIN>/ui` with a Let's Encrypt certificate, and AudioSocket on `:9092` restricted to `PBX_ALLOWED_IPS` / `PBX_ALLOWED_HOSTS`. Start from `cp .env.example.nginx .env`, set `PUBLIC_DOMAIN` (e.g. `<ip-with-dashes>.sslip.io`), `LETSENCRYPT_EMAIL` and the allow list, then `make up-nginx`. The AudioSocket stream itself is not encrypted.
+Public server with TLS: `docker-compose-nginx.yml` puts nginx in front as the only exposed service — `wss://<PUBLIC_DOMAIN>/ui` with a Let's Encrypt certificate, and AudioSocket on `:9092` restricted to `PBX_ALLOWED_IPS` / `PBX_ALLOWED_HOSTS`. Start from `cp .env.example.nginx .env`, set `PUBLIC_DOMAIN` (e.g. `<ip-with-dashes>.sslip.io`), `LETSENCRYPT_EMAIL` and the allow list, and fill in the settings `live-ai` refuses to start without — `ARI_*`, `ASSEMBLYAI_API_KEY` and `UI_TOKEN` (`openssl rand -hex 24`) — then `make up-nginx`. The AudioSocket stream itself is not encrypted.
 
 Extension: `npx pnpm@10 install && npx pnpm@10 --filter @live-ai/extension build`, then load `apps/extension/.output/chrome-mv3` unpacked in `chrome://extensions`.
 

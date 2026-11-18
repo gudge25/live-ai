@@ -11,10 +11,12 @@ DOMAIN="${PUBLIC_DOMAIN:?PUBLIC_DOMAIN is required}"
 PBX_ALLOWED_IPS="${PBX_ALLOWED_IPS:-}"
 PBX_ALLOWED_HOSTS="${PBX_ALLOWED_HOSTS:-}"
 
-R=/etc/nginx/rendered
-DUMMY=/etc/nginx/dummy
-DNS_CACHE=/var/cache/pbx-dns
-REAL=/etc/letsencrypt/live/$DOMAIN
+# Runs as uid 101 on a read-only root fs: only /tmp (tmpfs) is writable.
+R=/tmp/rendered
+DUMMY=/tmp/dummy
+DNS_CACHE=/tmp/pbx-dns
+# Readable copy of the Let's Encrypt cert, written by certbot's deploy hook.
+REAL=/certs
 mkdir -p "$R" "$DUMMY" "$DNS_CACHE"
 
 log() { echo "[entrypoint] $*" >&2; }
@@ -25,7 +27,28 @@ if [ ! -s "$DUMMY/key.pem" ]; then
     -subj "/CN=$DOMAIN" -keyout "$DUMMY/key.pem" -out "$DUMMY/cert.pem" 2>/dev/null
 fi
 
-valid_ip()   { printf '%s' "$1" | grep -Eq '^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$'; }
+# Strict address check: IPv4 octets <= 255 and prefix <= 32; IPv6 hex/colons and
+# prefix <= 128. Anything nginx would reject must not reach allow.conf, or
+# `nginx -t` fails and the whole edge (HTTPS + ACME) stays down.
+valid_ip() {
+  v=$1; addr=${v%%/*}; pfx=""
+  [ -n "$addr" ] || return 1
+  case $v in */*) pfx=${v#*/}; [ -n "$pfx" ] || return 1 ;; esac
+  case $addr in
+    *:*)
+      printf '%s' "$addr" | grep -Eq '^[0-9A-Fa-f:.]+$' || return 1
+      [ "$(printf '%s' "$addr" | tr -cd ':' | wc -c)" -ge 2 ] || return 1
+      max=128 ;;
+    *)
+      printf '%s' "$addr" | awk -F. 'NF != 4 { exit 1 } { for (i = 1; i <= 4; i++) if ($i !~ /^[0-9]{1,3}$/ || $i + 0 > 255) exit 1 }' || return 1
+      max=32 ;;
+  esac
+  if [ -n "$pfx" ]; then
+    printf '%s' "$pfx" | grep -Eq '^[0-9]{1,3}$' || return 1
+    [ "$pfx" -le "$max" ] || return 1
+  fi
+  return 0
+}
 valid_host() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'; }
 
 # Replace $2 with $1 only if different; echo "1" when it changed.
@@ -80,8 +103,17 @@ render() {
   return $changed
 }
 
+# If the generated config is still rejected by nginx (e.g. an exotic IPv6 typo),
+# fall back to a deny-all allow list instead of leaving the whole edge down.
+check_config() {
+  if nginx -t >/dev/null 2>&1; then return 0; fi
+  log "nginx -t rejected the generated config — falling back to deny-all for AudioSocket"
+  printf '# fallback: generated allow list was rejected by nginx\ndeny all;\n' > "$R/allow.conf"
+  nginx -t >&2
+}
+
 render || true
-nginx -t >&2
+check_config
 nginx -g 'daemon off;' &
 NGINX_PID=$!
 trap 'kill -QUIT "$NGINX_PID" 2>/dev/null || true' TERM INT
@@ -92,7 +124,7 @@ while kill -0 "$NGINX_PID" 2>/dev/null; do
   kill -0 "$NGINX_PID" 2>/dev/null || break
   if render; then
     log "config changed — reloading nginx"
-    if nginx -t >&2; then nginx -s reload; else log "nginx -t failed; keeping running config"; fi
+    if check_config; then nginx -s reload; else log "nginx -t failed; keeping running config"; fi
   fi
 done
 wait "$NGINX_PID"

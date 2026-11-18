@@ -6,18 +6,21 @@
 #   docker compose -f docker-compose-nginx.yml logs -f nginx certbot
 #
 # nginx publishes:
-#   80    Let's Encrypt HTTP-01 challenge + redirect to HTTPS
-#   443   wss://<PUBLIC_DOMAIN>/ui  ->  live-ai:8765 (Chrome extension)
+#   80    Let's Encrypt HTTP-01 challenge + redirect to HTTPS   (container :8080)
+#   443   wss://<PUBLIC_DOMAIN>/ui  ->  live-ai:8765 (Chrome extension)  (container :8443)
 #   9092  AudioSocket TCP -> live-ai:9092, accepted only from PBX_ALLOWED_* sources.
 #         Raw unencrypted audio: the allow list filters who connects, it does not
 #         encrypt. Keep the PBX <-> this host path on a network you trust.
 # live-ai itself publishes nothing.
+# nginx runs unprivileged (uid 101): read-only root fs, no capabilities, no
+# privilege escalation. certbot's deploy hook gives it a readable copy of the
+# certificate in the shared `tls` volume.
 #
 # PUBLIC_DOMAIN needs a DNS A record to this host. With no domain of your own,
 # <ip-with-dashes>.sslip.io resolves to that IP, e.g. 203-0-113-10.sslip.io.
 # Test the certificate flow with LETSENCRYPT_STAGING=true first (production has
 # strict rate limits); to switch to production afterwards, drop the volume:
-#   docker compose -f docker-compose-nginx.yml down && docker volume rm <project>_letsencrypt
+#   docker compose -f docker-compose-nginx.yml down && docker volume rm <project>_letsencrypt <project>_tls
 services:
   live-ai:
     build:
@@ -54,14 +57,21 @@ services:
       PBX_ALLOWED_IPS: ${PBX_ALLOWED_IPS:-}
       PBX_ALLOWED_HOSTS: ${PBX_ALLOWED_HOSTS:-}
     ports:
-      - "80:80"
-      - "443:443"
+      - "80:8080"
+      - "443:8443"
       - "9092:9092"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/entrypoint.sh:/entrypoint.sh:ro
-      - letsencrypt:/etc/letsencrypt:ro
+      - tls:/certs:ro
       - certbot-webroot:/var/www/certbot:ro
+    read_only: true
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=0755
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     stop_grace_period: 10s
     logging:
       driver: json-file
@@ -84,6 +94,9 @@ services:
       - ./nginx/certbot-entrypoint.sh:/certbot-entrypoint.sh:ro
       - letsencrypt:/etc/letsencrypt
       - certbot-webroot:/var/www/certbot
+      - tls:/nginx-certs
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -93,3 +106,4 @@ services:
 volumes:
   letsencrypt:
   certbot-webroot:
+  tls:
