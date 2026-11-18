@@ -27,44 +27,17 @@ if [ ! -s "$DUMMY/key.pem" ]; then
     -subj "/CN=$DOMAIN" -keyout "$DUMMY/key.pem" -out "$DUMMY/cert.pem" 2>/dev/null
 fi
 
-# Strict address check: IPv4 octets <= 255 and prefix <= 32; IPv6 hex/colons and
-# prefix <= 128. Anything nginx would reject must not reach allow.conf, or
+# Strict IPv4 check (octets <= 255, optional /prefix <= 32). IPv6 is deliberately
+# not supported. Anything nginx would reject must not reach allow.conf, or
 # `nginx -t` fails and the whole edge (HTTPS + ACME) stays down.
 valid_ip() {
   v=$1; addr=${v%%/*}; pfx=""
   [ -n "$addr" ] || return 1
   case $v in */*) pfx=${v#*/}; [ -n "$pfx" ] || return 1 ;; esac
-  case $addr in
-    *:*)
-      # IPv6: hex groups of 1-4 digits, either exactly 8 groups or one "::" with
-      # at most 7 groups around it. (Embedded dotted IPv4 is not accepted.)
-      printf '%s' "$addr" | awk '{
-        a = $0
-        if (a ~ /[^0-9A-Fa-f:]/ || a ~ /:::/) exit 1
-        i = index(a, "::")
-        if (i) {
-          rest = substr(a, i + 2)
-          if (index(rest, "::")) exit 1
-          left = substr(a, 1, i - 1)
-          nl = (left == "") ? 0 : split(left, L, ":")
-          nr = (rest == "") ? 0 : split(rest, R, ":")
-          if (nl + nr > 7) exit 1
-          for (k = 1; k <= nl; k++) if (L[k] !~ /^[0-9A-Fa-f]{1,4}$/) exit 1
-          for (k = 1; k <= nr; k++) if (R[k] !~ /^[0-9A-Fa-f]{1,4}$/) exit 1
-        } else {
-          n = split(a, G, ":")
-          if (n != 8) exit 1
-          for (k = 1; k <= n; k++) if (G[k] !~ /^[0-9A-Fa-f]{1,4}$/) exit 1
-        }
-      }' || return 1
-      max=128 ;;
-    *)
-      printf '%s' "$addr" | awk -F. 'NF != 4 { exit 1 } { for (i = 1; i <= 4; i++) if ($i !~ /^[0-9]{1,3}$/ || $i + 0 > 255) exit 1 }' || return 1
-      max=32 ;;
-  esac
+  printf '%s' "$addr" | awk -F. 'NF != 4 { exit 1 } { for (i = 1; i <= 4; i++) if ($i !~ /^[0-9]{1,3}$/ || $i + 0 > 255) exit 1 }' || return 1
   if [ -n "$pfx" ]; then
-    printf '%s' "$pfx" | grep -Eq '^[0-9]{1,3}$' || return 1
-    [ "$pfx" -le "$max" ] || return 1
+    printf '%s' "$pfx" | grep -Eq '^[0-9]{1,2}$' || return 1
+    [ "$pfx" -le 32 ] || return 1
   fi
   return 0
 }
