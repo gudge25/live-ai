@@ -1,0 +1,95 @@
+# Live AI behind nginx — the ONLY publicly exposed service.
+#   cp .env.example.nginx .env   # fill in PUBLIC_DOMAIN, LETSENCRYPT_EMAIL,
+#                                # PBX_ALLOWED_IPS / PBX_ALLOWED_HOSTS, ARI_*, ASSEMBLYAI_API_KEY,
+#                                # UI_TOKEN, AUDIOSOCKET_ADVERTISE_HOST=<server IP or PUBLIC_DOMAIN>:9092
+#   docker compose -f docker-compose-nginx.yml up -d --build
+#   docker compose -f docker-compose-nginx.yml logs -f nginx certbot
+#
+# nginx publishes:
+#   80    Let's Encrypt HTTP-01 challenge + redirect to HTTPS
+#   443   wss://<PUBLIC_DOMAIN>/ui  ->  live-ai:8765 (Chrome extension)
+#   9092  AudioSocket TCP -> live-ai:9092, accepted only from PBX_ALLOWED_* sources.
+#         Raw unencrypted audio: the allow list filters who connects, it does not
+#         encrypt. Keep the PBX <-> this host path on a network you trust.
+# live-ai itself publishes nothing.
+#
+# PUBLIC_DOMAIN needs a DNS A record to this host. With no domain of your own,
+# <ip-with-dashes>.sslip.io resolves to that IP, e.g. 203-0-113-10.sslip.io.
+# Test the certificate flow with LETSENCRYPT_STAGING=true first (production has
+# strict rate limits); to switch to production afterwards, drop the volume:
+#   docker compose -f docker-compose-nginx.yml down && docker volume rm <project>_letsencrypt
+services:
+  live-ai:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: live-ai-server:latest
+    container_name: live-ai
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Fixed binds inside the container; nginx is the only way in.
+      UI_BIND: 0.0.0.0
+      UI_PORT: "8765"
+      AUDIOSOCKET_BIND: 0.0.0.0:9092
+    volumes:
+      # Optional: CA of the PBX's TLS certificate, referenced as ARI_CA_CERT=/certs/<file>
+      - ./certs:/certs:ro
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  nginx:
+    build: ./nginx
+    image: live-ai-nginx:latest
+    container_name: live-ai-nginx
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    # Explicit variables only — this container must not see the secrets in .env.
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN in .env, e.g. 203-0-113-10.sslip.io}
+      PBX_ALLOWED_IPS: ${PBX_ALLOWED_IPS:-}
+      PBX_ALLOWED_HOSTS: ${PBX_ALLOWED_HOSTS:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9092:9092"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  certbot:
+    image: certbot/certbot:v3.0.1
+    container_name: live-ai-certbot
+    restart: unless-stopped
+    depends_on:
+      - nginx
+    entrypoint: ["/bin/sh", "/certbot-entrypoint.sh"]
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN in .env}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+      LETSENCRYPT_STAGING: ${LETSENCRYPT_STAGING:-false}
+    volumes:
+      - ./nginx/certbot-entrypoint.sh:/certbot-entrypoint.sh:ro
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  letsencrypt:
+  certbot-webroot:

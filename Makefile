@@ -12,7 +12,7 @@ EXT_DIR     := apps/extension/.output/chrome-mv3
 .DEFAULT_GOAL := help
 .PHONY: help install env build test lint typecheck check \
         up down restart rebuild logs logs-pretty ps health tunnel \
-        build-pbx up-pbx \
+        build-pbx up-pbx up-nginx down-nginx logs-nginx \
         dev-server dev-mock ext-build ext-dev ext-zip clean
 
 help: ## Show this help
@@ -89,6 +89,17 @@ build-pbx: ## Build server dist via `docker run` (seccomp workaround), then pack
 
 up-pbx: build-pbx ## Build (build-pbx) and start via docker-compose-pbx.yml
 	$(COMPOSE) -f docker-compose-pbx.yml up -d
+
+# ---- behind nginx + Let's Encrypt (docker-compose-nginx.yml) ----
+
+up-nginx: ## Build and start live-ai + nginx + certbot (docker-compose-nginx.yml)
+	$(COMPOSE) -f docker-compose-nginx.yml up -d --build
+
+down-nginx: ## Stop the nginx stack (keeps the certificate volume)
+	$(COMPOSE) -f docker-compose-nginx.yml down
+
+logs-nginx: ## Follow nginx + certbot logs
+	$(COMPOSE) -f docker-compose-nginx.yml logs -f --tail=100 nginx certbot
 
 # ---- development ----
 
