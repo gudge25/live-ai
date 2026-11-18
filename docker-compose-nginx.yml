@@ -2,6 +2,8 @@
 #   cp .env.example.nginx .env   # fill in PUBLIC_DOMAIN, LETSENCRYPT_EMAIL,
 #                                # PBX_ALLOWED_IPS / PBX_ALLOWED_HOSTS, ARI_*, ASSEMBLYAI_API_KEY,
 #                                # UI_TOKEN, AUDIOSOCKET_ADVERTISE_HOST=<server IP or PUBLIC_DOMAIN>:9092
+#   docker compose down                                  # only if the default stack (`make up`) is running:
+#                                                        # it uses the same container name and host port 9092
 #   docker compose -f docker-compose-nginx.yml up -d --build
 #   docker compose -f docker-compose-nginx.yml logs -f nginx certbot
 #
