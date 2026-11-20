@@ -2,11 +2,14 @@ import { createServer, type Server, type Socket } from 'node:net';
 import type { Logger } from '../logger.js';
 import { bytesToUuid, encodeFrame, FrameParser, Kind, type Frame } from './protocol.js';
 
+/** Why an AudioSocket stream ended. */
+export type EndReason = 'hangup' | 'error' | 'closed';
+
 /** Receives audio for one registered AudioSocket UUID. */
 export interface AudioSink {
   onAudio(pcm: Buffer): void;
   /** Stream ended: Asterisk hung up, sent an error, or the socket closed. */
-  onEnd(reason: 'hangup' | 'error' | 'closed'): void;
+  onEnd(reason: EndReason): void;
 }
 
 /** 20 ms of silence as AudioSocket slin 8 kHz (160 samples x 2 bytes). */
@@ -88,7 +91,7 @@ export class AudioSocketServer {
     let uuid: string | undefined;
     let sink: AudioSink | undefined;
     let ended = false;
-    const end = (reason: 'hangup' | 'error' | 'closed') => {
+    const end = (reason: EndReason) => {
       if (ended || !sink) return;
       ended = true;
       sink.onEnd(reason);
@@ -148,7 +151,7 @@ export class AudioSocketServer {
     sink: AudioSink,
     uuid: string | undefined,
     f: Frame,
-    end: (reason: 'hangup' | 'error' | 'closed') => void,
+    end: (reason: EndReason) => void,
   ): boolean {
     if (f.kind === Kind.Audio) {
       sink.onAudio(f.payload);
