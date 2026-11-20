@@ -40,6 +40,12 @@ export interface TapOptions {
   createAttempts?: number;
 }
 
+/**
+ * After a timeout — or an HTTP error on a retry, which can mean "that id exists now" — the earlier
+ * channel-creating request may have finished late inside Asterisk.
+ */
+const mayHaveCompleted = (err: unknown, attempt: number): boolean => err instanceof AriTimeoutError || (attempt > 1 && err instanceof AriHttpError);
+
 export const resourceId = (sessionId: string, kind: 'snoop' | 'em' | 'br', side: Side) => `${RESOURCE_PREFIX}${sessionId}-${kind}-${side}`;
 
 /**
@@ -128,16 +134,14 @@ export class TapOrchestrator {
       try {
         return await create();
       } catch (err) {
-        // After a retry, a 4xx can mean "that id exists now": the first request finished late.
-        const mayHaveCompleted = err instanceof AriTimeoutError || (attempt > 1 && err instanceof AriHttpError);
-        if (!mayHaveCompleted) throw err;
+        if (!mayHaveCompleted(err, attempt)) throw err;
         const late = await this.o.api.getChannel(channelId).catch(() => undefined);
         if (late) {
           this.o.log.warn({ channelId, attempt }, 'ARI create was slow but the channel exists, using it');
           return late as unknown as T;
         }
         if (attempt >= attempts) throw err;
-        this.o.log.warn({ channelId, attempt, err: err instanceof Error ? err.message : err }, 'ARI create timed out, retrying');
+        this.o.log.warn({ channelId, attempt, err }, 'ARI create timed out, retrying');
       }
     }
   }
