@@ -11,12 +11,12 @@ EXT_DIR     := apps/extension/.output/chrome-mv3
 
 .DEFAULT_GOAL := help
 .PHONY: help install env build test lint typecheck check \
-        up down restart rebuild logs logs-pretty ps health tunnel \
-        build-pbx up-pbx up-nginx down-nginx logs-nginx \
+        up down restart recreate rebuild logs logs-pretty ps health tunnel \
+        build-pbx up-pbx up-nginx recreate-nginx down-nginx logs-nginx \
         dev-server dev-mock ext-build ext-dev ext-zip clean
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ---- setup ----
 
@@ -51,8 +51,11 @@ up: ## Build and start the service in the background
 down: ## Stop and remove the service
 	$(COMPOSE) down
 
-restart: ## Restart the service (keeps the image)
+restart: ## Restart the service (keeps the image and the OLD environment; use recreate after editing .env)
 	$(COMPOSE) restart $(SERVICE)
+
+recreate: ## Recreate the service so it re-reads .env (no rebuild; use after editing .env)
+	$(COMPOSE) up -d --force-recreate $(SERVICE)
 
 rebuild: ## Rebuild the server image (no cache) + the extension, then restart the service
 	$(COMPOSE) build --no-cache $(SERVICE) && $(COMPOSE) up -d $(SERVICE)
@@ -94,6 +97,9 @@ up-pbx: build-pbx ## Build (build-pbx) and start via docker-compose-pbx.yml
 
 up-nginx: ## Build and start live-ai + nginx + certbot (docker-compose-nginx.yml)
 	$(COMPOSE) -f docker-compose-nginx.yml up -d --build
+
+recreate-nginx: ## Recreate live-ai in the nginx stack so it re-reads .env (no rebuild; nginx/certbot untouched)
+	$(COMPOSE) -f docker-compose-nginx.yml up -d --force-recreate $(SERVICE)
 
 down-nginx: ## Stop the nginx stack (keeps the certificate volume)
 	$(COMPOSE) -f docker-compose-nginx.yml down
