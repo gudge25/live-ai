@@ -1,6 +1,6 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import type { Logger } from '../logger.js';
-import { bytesToUuid, FrameParser, Kind } from './protocol.js';
+import { bytesToUuid, encodeFrame, FrameParser, Kind } from './protocol.js';
 
 /** Receives audio for one registered AudioSocket UUID. */
 export interface AudioSink {
@@ -9,15 +9,28 @@ export interface AudioSink {
   onEnd(reason: 'hangup' | 'error' | 'closed'): void;
 }
 
-/** TCP AudioSocket server that routes connections by the UUID in their first frame. */
+/** 20 ms of silence as AudioSocket slin 8 kHz (160 samples x 2 bytes). */
+const SILENCE_FRAME = encodeFrame(Kind.Audio, Buffer.alloc(320));
+
+/**
+ * TCP AudioSocket server that routes connections by the UUID in their first frame.
+ *
+ * It is a listen-only peer, but Asterisk 20.17+ `chan_audiosocket` waits for the peer to send frames:
+ * `audiosocket_read` polls in a loop with no deadline while holding the channel lock, so a silent peer
+ * can freeze the channel container and with it every new call and hangup on the PBX (upstream issues
+ * asterisk/asterisk#2078, #2089). `keepaliveMs` sends one silence frame per stream at that interval so
+ * the read always completes; 0 disables it.
+ */
 export class AudioSocketServer {
   private readonly server: Server;
   private readonly sinks = new Map<string, AudioSink>();
   private readonly sockets = new Map<string, Socket>();
+  private keepaliveTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly log: Logger,
     private readonly firstFrameTimeoutMs = 5000,
+    private readonly keepaliveMs = 0,
   ) {
     this.server = createServer((s) => this.onConnection(s));
   }
@@ -44,13 +57,27 @@ export class AudioSocketServer {
       this.server.once('error', reject);
       this.server.listen(port, host, () => {
         this.server.off('error', reject);
+        this.startKeepalive();
         const addr = this.server.address();
         resolve(typeof addr === 'object' && addr ? addr.port : port);
       });
     });
   }
 
+  private startKeepalive(): void {
+    if (this.keepaliveMs <= 0 || this.keepaliveTimer) return;
+    this.keepaliveTimer = setInterval(() => {
+      for (const s of this.sockets.values()) {
+        // Skip a stream whose send buffer is backed up; writing more would only grow memory.
+        if (!s.destroyed && s.writable && !s.writableNeedDrain) s.write(SILENCE_FRAME);
+      }
+    }, this.keepaliveMs);
+    this.keepaliveTimer.unref();
+  }
+
   close(): Promise<void> {
+    clearInterval(this.keepaliveTimer);
+    this.keepaliveTimer = undefined;
     for (const s of this.sockets.values()) s.destroy();
     return new Promise((r) => this.server.close(() => r()));
   }

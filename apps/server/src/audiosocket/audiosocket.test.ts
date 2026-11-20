@@ -100,3 +100,44 @@ describe('AudioSocketServer', () => {
     expect(server.isConnected(uuid)).toBe(false);
   });
 });
+
+describe('AudioSocketServer keepalive', () => {
+  let server: AudioSocketServer;
+  afterEach(() => server.close());
+
+  /** Connects, optionally identifies as `uuid`, and returns the frames the server sends back within `ms`. */
+  async function received(keepaliveMs: number, ms: number, identify: boolean) {
+    server = new AudioSocketServer(silentLog, 5000, keepaliveMs);
+    const port = await server.listen(0, '127.0.0.1');
+    const uuid = randomUUID();
+    server.register(uuid, recordingSink().sink);
+    const s = await new Promise<Socket>((resolve) => {
+      const c = connect(port, '127.0.0.1', () => resolve(c));
+    });
+    const parser = new FrameParser();
+    const frames: { kind: number; payload: Buffer }[] = [];
+    s.on('data', (d: Buffer) => frames.push(...parser.push(d)));
+    if (identify) s.write(encodeFrame(Kind.Uuid, uuidToBytes(uuid)));
+    await new Promise((r) => setTimeout(r, ms));
+    s.destroy();
+    return frames;
+  }
+
+  it('sends 20 ms silence frames on an identified stream', async () => {
+    const frames = await received(20, 200, true);
+    expect(frames.length).toBeGreaterThanOrEqual(3);
+    for (const f of frames) {
+      expect(f.kind).toBe(Kind.Audio);
+      expect(f.payload.length).toBe(320);
+      expect(f.payload.every((b) => b === 0)).toBe(true);
+    }
+  });
+
+  it('sends nothing before the stream has identified itself', async () => {
+    expect(await received(20, 150, false)).toEqual([]);
+  });
+
+  it('sends nothing when disabled', async () => {
+    expect(await received(0, 150, true)).toEqual([]);
+  });
+});
