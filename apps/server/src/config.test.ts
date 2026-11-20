@@ -14,6 +14,13 @@ const base = {
 };
 
 describe('loadConfig', () => {
+  it('defaults AUDIOSOCKET_KEEPALIVE_MS to 1000, allows 0 to disable, and rejects negatives', () => {
+    expect(loadConfig(base).AUDIOSOCKET_KEEPALIVE_MS).toBe(1000);
+    expect(loadConfig({ ...base, AUDIOSOCKET_KEEPALIVE_MS: '0' }).AUDIOSOCKET_KEEPALIVE_MS).toBe(0);
+    expect(loadConfig({ ...base, AUDIOSOCKET_KEEPALIVE_MS: '250' }).AUDIOSOCKET_KEEPALIVE_MS).toBe(250);
+    expect(() => loadConfig({ ...base, AUDIOSOCKET_KEEPALIVE_MS: '-1' })).toThrow(/AUDIOSOCKET_KEEPALIVE_MS/);
+  });
+
   it('parses valid env with defaults', () => {
     const cfg = loadConfig(base);
     expect(cfg.MONITORED_EXTENSIONS).toEqual(['222', '223']);

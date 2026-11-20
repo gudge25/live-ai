@@ -36,7 +36,7 @@ async function main() {
   };
   const api = new AriRest(ariOpts);
   const events = new AriEventStream({ ...ariOpts, subscribeAll: cfg.ARI_SUBSCRIBE_ALL }, log.child({ mod: 'ari' }));
-  const audio = new AudioSocketServer(log.child({ mod: 'audiosocket' }));
+  const audio = new AudioSocketServer(log.child({ mod: 'audiosocket' }), undefined, cfg.AUDIOSOCKET_KEEPALIVE_MS);
   const store = new SessionStore(cfg.UI_HISTORY_LIMIT);
 
   const app = new LiveAiApp({
