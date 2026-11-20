@@ -118,6 +118,8 @@ export class AudioSocketServer {
           }
           this.sockets.get(uuid)?.destroy();
           this.sockets.set(uuid, socket);
+          // Don't make Asterisk's first read wait for the next timer tick (see class comment).
+          if (this.keepaliveMs > 0) socket.write(SILENCE_FRAME);
           this.log.info({ remote, uuid }, 'AudioSocket: stream connected');
           continue;
         }
