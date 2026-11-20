@@ -173,6 +173,30 @@ describe('TapOrchestrator with a slow Asterisk', () => {
     expect(events.listenerCount('event')).toBe(0);
   });
 
+  it('hangs up a channel that Asterisk only creates after the rollback already ran', async () => {
+    const lateTap = new TapOrchestrator({
+      api: ari,
+      audio: { register: (u) => registered.add(u), unregister: (u) => registered.delete(u) },
+      events,
+      advertiseHost: '10.0.0.5:9092',
+      lateCleanupDelayMs: 40,
+      log: silentLog,
+    });
+    ari.snoopChannel = async (id, p) => {
+      ari.calls.push({ op: 'snoopChannel', args: [id, p] });
+      // Asterisk is slow: the channel shows up long after we gave up and rolled back.
+      setTimeout(() => ari.addChannel({ id: p.snoopId, name: `Snoop/${id}` }), 15);
+      throw timeout();
+    };
+    await expect(lateTap.attach('s1', '1695.10', sinks)).rejects.toBeInstanceOf(TapError);
+    await tick(25);
+    expect(ari.channels.has('liveai-s1-snoop-agent')).toBe(true); // the rollback missed it: it did not exist yet
+
+    await tick(60); // the delayed cleanup fires
+    expect(ari.channels.has('liveai-s1-snoop-agent')).toBe(false);
+    expect(ours().channels).toEqual([]);
+  });
+
   it('does not retry a real HTTP error from Asterisk', async () => {
     ari.failOn.set('snoopChannel', new AriHttpError(500, 'POST', '/channels/1695.10/snoop', 'boom'));
     await expect(tap.attach('s1', '1695.10', sinks)).rejects.toBeInstanceOf(TapError);

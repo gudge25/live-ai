@@ -38,6 +38,12 @@ export interface TapOptions {
   stasisTimeoutMs?: number;
   /** Tries per channel-creating request when Asterisk is slow to answer (timeouts only). Default 2. */
   createAttempts?: number;
+  /**
+   * After giving up on a create request that timed out, hang its channel up once more after this
+   * delay: Asterisk may still create it after our rollback already ran (404 = nothing to remove yet).
+   * Default 30s.
+   */
+  lateCleanupDelayMs?: number;
 }
 
 /**
@@ -113,13 +119,29 @@ export class TapOrchestrator {
       wait.cancel();
       // A request we gave up on may still complete inside Asterisk; remember its (deterministic) id
       // so the rollback hangs it up instead of leaving it behind.
-      if (err instanceof AriTimeoutError) h.channels.push(channelId);
+      if (err instanceof AriTimeoutError) {
+        h.channels.push(channelId);
+        this.scheduleLateCleanup(channelId);
+      }
       throw err;
     }
     h.channels.push(ch.id); // record it for rollback even if the Stasis confirmation below times out
     wait.arm();
     await wait.promise;
     return ch;
+  }
+
+  /**
+   * The rollback's hangup can run before a slow Asterisk has even created the channel (ARI answers
+   * 404, which counts as "already gone"), and the orphan sweep only runs once at startup. So try
+   * again after a delay; `hangupChannel` treats 404 as success, so this is a no-op when nothing
+   * showed up. Channel ids are per-session, so this can never hit a later call's channel.
+   */
+  private scheduleLateCleanup(channelId: string): void {
+    const timer = setTimeout(() => {
+      this.o.api.hangupChannel(channelId).catch((err) => this.o.log.warn({ channelId, err }, 'late cleanup of a timed-out channel failed'));
+    }, this.o.lateCleanupDelayMs ?? 30_000);
+    timer.unref?.();
   }
 
   /**
