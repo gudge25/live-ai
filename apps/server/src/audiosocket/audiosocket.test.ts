@@ -100,3 +100,69 @@ describe('AudioSocketServer', () => {
     expect(server.isConnected(uuid)).toBe(false);
   });
 });
+
+describe('AudioSocketServer keepalive', () => {
+  let server: AudioSocketServer;
+  afterEach(() => server.close());
+
+  /** Connects (optionally identifying itself) and exposes the frames the server sends back. */
+  async function open(keepaliveMs: number, identify: boolean) {
+    server = new AudioSocketServer(silentLog, 5000, keepaliveMs);
+    const port = await server.listen(0, '127.0.0.1');
+    const uuid = randomUUID();
+    server.register(uuid, recordingSink().sink);
+    const s = await new Promise<Socket>((resolve) => {
+      const c = connect(port, '127.0.0.1', () => resolve(c));
+    });
+    const parser = new FrameParser();
+    const frames: { kind: number; payload: Buffer }[] = [];
+    s.on('data', (d: Buffer) => frames.push(...parser.push(d)));
+    if (identify) s.write(encodeFrame(Kind.Uuid, uuidToBytes(uuid)));
+    /** Resolves once `n` frames have arrived; rejects after a generous deadline so a slow runner can't flake it. */
+    const waitFor = async (n: number, deadlineMs = 5000) => {
+      const end = Date.now() + deadlineMs;
+      while (frames.length < n) {
+        if (Date.now() > end) throw new Error(`only ${frames.length}/${n} frames after ${deadlineMs} ms`);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+    return { frames, waitFor, close: () => s.destroy() };
+  }
+
+  const expectSilence = (frames: { kind: number; payload: Buffer }[]) => {
+    for (const f of frames) {
+      expect(f.kind).toBe(Kind.Audio);
+      expect(f.payload.length).toBe(320);
+      expect(f.payload.every((b) => b === 0)).toBe(true);
+    }
+  };
+
+  it('keeps sending 20 ms silence frames on an identified stream', async () => {
+    const c = await open(20, true);
+    await c.waitFor(3);
+    expectSilence(c.frames);
+    c.close();
+  });
+
+  it('sends the first frame as soon as the stream identifies, not on the next timer tick', async () => {
+    const c = await open(60_000, true); // the interval never ticks within this test
+    await c.waitFor(1, 2000);
+    expect(c.frames).toHaveLength(1);
+    expectSilence(c.frames);
+    c.close();
+  });
+
+  it('sends nothing before the stream has identified itself', async () => {
+    const c = await open(20, false);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(c.frames).toEqual([]);
+    c.close();
+  });
+
+  it('sends nothing when disabled', async () => {
+    const c = await open(0, true);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(c.frames).toEqual([]);
+    c.close();
+  });
+});

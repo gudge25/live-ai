@@ -33,6 +33,8 @@ const EnvSchema = z.object({
   AUDIOSOCKET_BIND: hostPort.default('0.0.0.0:9092'),
   /** host:port that Asterisk uses to reach this service. */
   AUDIOSOCKET_ADVERTISE_HOST: hostPort,
+  /** Interval for the silence frame sent on each AudioSocket stream (see AudioSocketServer); 0 disables it. */
+  AUDIOSOCKET_KEEPALIVE_MS: z.coerce.number().int().min(0).default(1000),
 
   // --- AssemblyAI ---
   ASSEMBLYAI_API_KEY: z.string().min(1, 'ASSEMBLYAI_API_KEY is required'),
