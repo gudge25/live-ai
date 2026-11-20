@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AriHttpError } from '../ari/rest.js';
+import { AriHttpError, AriTimeoutError } from '../ari/rest.js';
 import type { AudioSink } from '../audiosocket/server.js';
-import { FakeAri, FakeEvents } from '../test/fake-ari.js';
+import { FakeAri, FakeEvents, tick } from '../test/fake-ari.js';
 import { silentLog } from '../test/log.js';
 import { TapError, TapOrchestrator } from './tap.js';
 
@@ -128,5 +128,72 @@ describe('TapOrchestrator cleanup', () => {
     expect(ari.bridges.has('foreign-bridge')).toBe(true);
     expect(ari.channels.has('1695.10')).toBe(true);
     expect(ours().channels.filter((id) => id.startsWith('liveai-live-'))).toHaveLength(4);
+  });
+});
+
+describe('TapOrchestrator with a slow Asterisk', () => {
+  const timeout = () => new AriTimeoutError('POST', '/channels/1695.10/snoop', 5000);
+  const snoopCalls = () => ari.calls.filter((c) => c.op === 'snoopChannel');
+
+  it('retries a timed-out snoop that never reached Asterisk', async () => {
+    ari.failOn.set('snoopChannel', timeout()); // one-shot: the first request times out and creates nothing
+    await tap.attach('s1', '1695.10', sinks);
+    expect(snoopCalls()).toHaveLength(3); // agent: timed out + retried, caller: once
+    expect(ours().channels).toHaveLength(4);
+    expect(events.listenerCount('event')).toBe(0);
+  });
+
+  it('uses a snoop that finished late instead of creating a duplicate', async () => {
+    const real = ari.snoopChannel.bind(ari);
+    let first = true;
+    ari.snoopChannel = async (id, p) => {
+      const ch = await real(id, p); // Asterisk does create the channel…
+      if (first) {
+        first = false;
+        throw timeout(); // …but too late for our request
+      }
+      return ch;
+    };
+    await tap.attach('s1', '1695.10', sinks);
+    expect(snoopCalls()).toHaveLength(2); // one per side, no re-POST for the late one
+    expect(ari.calls.some((c) => c.op === 'getChannel' && c.args[0] === 'liveai-s1-snoop-agent')).toBe(true);
+    expect(ours().channels).toHaveLength(4);
+  });
+
+  it('gives up after the configured attempts and rolls back, including the channel that timed out', async () => {
+    ari.snoopChannel = async (id, p) => {
+      ari.calls.push({ op: 'snoopChannel', args: [id, p] });
+      throw timeout();
+    };
+    await expect(tap.attach('s1', '1695.10', sinks)).rejects.toBeInstanceOf(TapError);
+    expect(snoopCalls()).toHaveLength(2); // default: 2 attempts
+    expect(ari.calls.some((c) => c.op === 'hangupChannel' && c.args[0] === 'liveai-s1-snoop-agent')).toBe(true);
+    expect(ours()).toEqual({ channels: [], bridges: [] });
+    expect(registered.size).toBe(0);
+    expect(events.listenerCount('event')).toBe(0);
+  });
+
+  it('does not retry a real HTTP error from Asterisk', async () => {
+    ari.failOn.set('snoopChannel', new AriHttpError(500, 'POST', '/channels/1695.10/snoop', 'boom'));
+    await expect(tap.attach('s1', '1695.10', sinks)).rejects.toBeInstanceOf(TapError);
+    expect(snoopCalls()).toHaveLength(1);
+  });
+
+  it('does not count the slow create against the StasisStart wait', async () => {
+    const slowTap = new TapOrchestrator({
+      api: ari,
+      audio: { register: (u) => registered.add(u), unregister: (u) => registered.delete(u) },
+      events,
+      advertiseHost: '10.0.0.5:9092',
+      stasisTimeoutMs: 10, // far shorter than the 40ms the snoop request takes below
+      log: silentLog,
+    });
+    const real = ari.snoopChannel.bind(ari);
+    ari.snoopChannel = async (id, p) => {
+      await tick(40);
+      return real(id, p);
+    };
+    await slowTap.attach('s1', '1695.10', sinks);
+    expect(ours().channels).toHaveLength(4);
   });
 });

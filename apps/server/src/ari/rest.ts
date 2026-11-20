@@ -73,7 +73,7 @@ export class AriRest implements AriApi {
 
   constructor(opts: AriConnectionOptions) {
     this.app = opts.app;
-    this.timeoutMs = opts.requestTimeoutMs ?? 5000;
+    this.timeoutMs = opts.requestTimeoutMs ?? 15_000;
     this.base = `${opts.url.replace(/\/+$/, '')}/ari`;
     const credentials = `${opts.user}:${opts.password}`;
     this.auth = `Basic ${Buffer.from(credentials).toString('base64')}`;

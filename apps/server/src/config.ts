@@ -24,6 +24,8 @@ const EnvSchema = z.object({
   ARI_CA_CERT: z.string().optional(),
   ARI_TLS_INSECURE: bool.default(false),
   ARI_SUBSCRIBE_ALL: bool.default(false),
+  /** Per-request timeout for ARI REST calls. A busy Asterisk can take several seconds to create a snoop channel. */
+  ARI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
 
   // --- Monitoring ---
   MONITORED_EXTENSIONS: list.pipe(z.array(z.string().regex(/^[\w*#+-]+$/)).min(1, 'MONITORED_EXTENSIONS must list at least one extension')),

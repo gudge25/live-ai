@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Side } from '@live-ai/shared';
-import type { AriApi } from '../ari/rest.js';
+import { AriHttpError, AriTimeoutError, type AriApi } from '../ari/rest.js';
 import type { AudioSink, AudioSocketServer } from '../audiosocket/server.js';
 import type { Logger } from '../logger.js';
 import { RESOURCE_PREFIX, type AriEventSource } from '../monitor/call-monitor.js';
@@ -34,8 +34,10 @@ export interface TapOptions {
   advertiseHost: string;
   format?: string;
   log: Logger;
-  /** How long to wait for a new channel's StasisStart before adding it to its bridge anyway. */
+  /** How long to wait, after a channel was created, for its StasisStart before giving up on it. */
   stasisTimeoutMs?: number;
+  /** Tries per channel-creating request when Asterisk is slow to answer (timeouts only). Default 2. */
+  createAttempts?: number;
 }
 
 export const resourceId = (sessionId: string, kind: 'snoop' | 'em' | 'br', side: Side) => `${RESOURCE_PREFIX}${sessionId}-${kind}-${side}`;
@@ -91,44 +93,77 @@ export class TapOrchestrator {
   /**
    * Creates a Stasis-bound channel (snoop or externalMedia) and waits for Asterisk to confirm,
    * via `StasisStart`, that it actually entered the app before returning it. If `create` itself
-   * throws, the wait is cancelled immediately rather than left to linger until its timeout.
+   * fails, the wait is cancelled immediately rather than left to linger until its timeout.
+   *
+   * The StasisStart timer only starts once the create request has returned: a slow Asterisk
+   * must not use up the confirmation budget while still answering the request itself.
    */
   private async createStasisChannel<T extends { id: string }>(h: TapHandle, channelId: string, create: () => Promise<T>): Promise<T> {
     const wait = this.waitForStasisStart(channelId);
     let ch: T;
     try {
-      ch = await create();
+      ch = await this.createWithRetry(channelId, create);
     } catch (err) {
       wait.cancel();
+      // A request we gave up on may still complete inside Asterisk; remember its (deterministic) id
+      // so the rollback hangs it up instead of leaving it behind.
+      if (err instanceof AriTimeoutError) h.channels.push(channelId);
       throw err;
     }
     h.channels.push(ch.id); // record it for rollback even if the Stasis confirmation below times out
+    wait.arm();
     await wait.promise;
     return ch;
   }
 
   /**
-   * Resolves once Asterisk reports `channelId` as having entered the Stasis app, or rejects if
-   * `stasisTimeoutMs` elapses first — proceeding without confirmation would risk the exact 422
-   * "Channel not in Stasis application" this wait exists to avoid. The listener is registered
-   * before the caller issues the channel-creating request, so it can't miss an event that
-   * arrives early. `cancel()` tears the listener/timer down without settling either way, for
-   * when the owning request failed and the wait's outcome no longer matters.
+   * Runs a channel-creating request, tolerating a slow Asterisk. After a timeout the request may
+   * still complete on the PBX, so before sending it again we look for the channel by its id and use
+   * it if it appeared; only if it didn't is the request retried (once, by default). Non-timeout
+   * errors are not retried — an HTTP error is Asterisk's real answer.
    */
-  private waitForStasisStart(channelId: string): { promise: Promise<void>; cancel: () => void } {
+  private async createWithRetry<T extends { id: string }>(channelId: string, create: () => Promise<T>): Promise<T> {
+    const attempts = this.o.createAttempts ?? 2;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await create();
+      } catch (err) {
+        // After a retry, a 4xx can mean "that id exists now": the first request finished late.
+        const mayHaveCompleted = err instanceof AriTimeoutError || (attempt > 1 && err instanceof AriHttpError);
+        if (!mayHaveCompleted) throw err;
+        const late = await this.o.api.getChannel(channelId).catch(() => undefined);
+        if (late) {
+          this.o.log.warn({ channelId, attempt }, 'ARI create was slow but the channel exists, using it');
+          return late as unknown as T;
+        }
+        if (attempt >= attempts) throw err;
+        this.o.log.warn({ channelId, attempt, err: err instanceof Error ? err.message : err }, 'ARI create timed out, retrying');
+      }
+    }
+  }
+
+  /**
+   * Resolves once Asterisk reports `channelId` as having entered the Stasis app, or rejects if
+   * `stasisTimeoutMs` elapses after `arm()` — proceeding without confirmation would risk the exact
+   * 422 "Channel not in Stasis application" this wait exists to avoid. The listener is registered
+   * before the caller issues the channel-creating request, so it can't miss an event that arrives
+   * early (in which case the wait is already settled when `arm()` is called). `cancel()` tears the
+   * listener/timer down without settling either way, for when the owning request failed and the
+   * wait's outcome no longer matters.
+   */
+  private waitForStasisStart(channelId: string): { promise: Promise<void>; arm: () => void; cancel: () => void } {
     const timeoutMs = this.o.stasisTimeoutMs ?? 2000;
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
     let settle!: (err?: Error) => void;
     const promise = new Promise<void>((resolve, reject) => {
       const onEvent = (ev: Record<string, unknown> & { type: string }) => {
         const channel = (ev as { channel?: { id?: string } }).channel;
         if (ev.type === 'StasisStart' && channel?.id === channelId) settle();
       };
-      const timer = setTimeout(
-        () => settle(new Error(`channel ${channelId} did not report StasisStart within ${timeoutMs}ms`)),
-        timeoutMs,
-      );
-      timer.unref?.();
       settle = (err) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         this.o.events.off('event', onEvent);
         if (err) reject(err);
@@ -137,10 +172,14 @@ export class TapOrchestrator {
       this.o.events.on('event', onEvent);
     });
     // The real rejection is still observed by whoever awaits `promise`; this just keeps Node
-    // from logging it as unhandled during the window before that `await` runs (`create()` can
-    // itself take longer than `stasisTimeoutMs`, so the timeout can fire first).
+    // from logging it as unhandled during the window before that `await` runs.
     promise.catch(() => {});
-    return { promise, cancel: () => settle() };
+    const arm = () => {
+      if (settled || timer) return;
+      timer = setTimeout(() => settle(new Error(`channel ${channelId} did not report StasisStart within ${timeoutMs}ms`)), timeoutMs);
+      timer.unref?.();
+    };
+    return { promise, arm, cancel: () => settle() };
   }
 
   async detach(sessionId: string): Promise<void> {

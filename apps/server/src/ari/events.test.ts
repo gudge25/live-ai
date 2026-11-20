@@ -1,4 +1,5 @@
 import type { AddressInfo } from 'node:net';
+import { pino } from 'pino';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer } from 'ws';
 import { silentLog } from '../test/log.js';
@@ -63,6 +64,21 @@ describe('AriEventStream', () => {
     expect(u.pathname).toBe('/ari/events');
     expect(u.searchParams.get('app')).toBe('live-ai');
     expect(seen[0]!.auth).toBe(`Basic ${Buffer.from('u:p').toString('base64')}`);
+  });
+
+  it('logs the close code, reason and uptime when the socket drops', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const log = pino({ level: 'warn' }, { write: (chunk: string) => void lines.push(JSON.parse(chunk)) });
+    const port = await listen();
+    wss!.on('connection', (ws) => setTimeout(() => ws.close(1012, 'service restart'), 20));
+    stream = new AriEventStream({ url: `http://127.0.0.1:${port}`, user: 'u', password: 'p', app: 'live-ai', initialDelayMs: 5000 }, log);
+    const dropped = waitFor<void>((res) => stream!.on('status', (s) => s === 'reconnecting' && res()));
+    stream.start();
+    await dropped;
+
+    const closed = lines.find((l) => l.msg === 'ARI events socket closed');
+    expect(closed).toMatchObject({ code: 1012, reason: 'service restart' });
+    expect(typeof closed!.uptimeMs).toBe('number');
   });
 
   it('keeps retrying when the server rejects auth', async () => {

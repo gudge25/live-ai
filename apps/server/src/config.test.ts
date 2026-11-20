@@ -21,6 +21,7 @@ describe('loadConfig', () => {
     expect(cfg.AAI_LANGUAGE_CODES).toEqual(['en']);
     expect(cfg.AAI_DUAL_CHANNEL).toBe(false);
     expect(cfg.UI_PORT).toBe(8765);
+    expect(cfg.ARI_REQUEST_TIMEOUT_MS).toBe(15000);
     expect(cfg.AAI_SUMMARY_ENABLED).toBe(false);
     expect(cfg.AAI_SUMMARY_MODEL).toBe('qwen3.5-4b-32k-fast');
     expect(cfg.AAI_SUMMARY_TIMEOUT_MS).toBe(10000);
@@ -39,6 +40,12 @@ describe('loadConfig', () => {
     expect(cfg.AAI_SUMMARY_MODEL).toBe('gemini-2.5-flash-lite');
     expect(cfg.AAI_SUMMARY_TIMEOUT_MS).toBe(5000);
     expect(cfg.AAI_SUMMARY_SYSTEM_PROMPT).toBe('Summarize briefly.');
+  });
+
+  it('parses and validates ARI_REQUEST_TIMEOUT_MS', () => {
+    expect(loadConfig({ ...base, ARI_REQUEST_TIMEOUT_MS: '30000' }).ARI_REQUEST_TIMEOUT_MS).toBe(30000);
+    expect(() => loadConfig({ ...base, ARI_REQUEST_TIMEOUT_MS: '0' })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...base, ARI_REQUEST_TIMEOUT_MS: 'soon' })).toThrow(ConfigError);
   });
 
   it('reports a clear error when ARI_URL is missing', () => {

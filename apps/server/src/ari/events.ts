@@ -74,7 +74,9 @@ export class AriEventStream extends EventEmitter<AriEventStreamEvents> {
     });
     this.ws = ws;
 
+    let openedAt: number | undefined;
     ws.on('open', () => {
+      openedAt = Date.now();
       this.attempt = 0;
       this.log.info({ app: this.opts.app }, 'ARI events connected');
       this.setStatus('connected');
@@ -94,10 +96,15 @@ export class AriEventStream extends EventEmitter<AriEventStreamEvents> {
       ws.terminate();
     });
     ws.on('error', (err) => this.log.warn({ err: err.message }, 'ARI events socket error'));
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
       if (this.ws !== ws) return;
       this.ws = undefined;
       if (this.stopped) return;
+      // Without the code/reason (and how long it was up) a dropped link is undiagnosable from our side.
+      this.log.warn(
+        { code, reason: reason.toString() || undefined, uptimeMs: openedAt === undefined ? undefined : Date.now() - openedAt },
+        'ARI events socket closed',
+      );
       this.scheduleReconnect();
     });
   }

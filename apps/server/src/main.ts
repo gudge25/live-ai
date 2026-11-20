@@ -33,6 +33,7 @@ async function main() {
     app: cfg.ARI_APP,
     caCertPath: cfg.ARI_CA_CERT,
     tlsInsecure: cfg.ARI_TLS_INSECURE,
+    requestTimeoutMs: cfg.ARI_REQUEST_TIMEOUT_MS,
   };
   const api = new AriRest(ariOpts);
   const events = new AriEventStream({ ...ariOpts, subscribeAll: cfg.ARI_SUBSCRIBE_ALL }, log.child({ mod: 'ari' }));
