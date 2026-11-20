@@ -68,7 +68,12 @@ describe('AriEventStream', () => {
 
   it('logs the close code, reason and uptime when the socket drops', async () => {
     const lines: Record<string, unknown>[] = [];
-    const log = pino({ level: 'warn' }, { write: (chunk: string) => void lines.push(JSON.parse(chunk)) });
+    const sink = {
+      write: (chunk: string) => {
+        lines.push(JSON.parse(chunk));
+      },
+    };
+    const log = pino({ level: 'warn' }, sink);
     const port = await listen();
     wss!.on('connection', (ws) => setTimeout(() => ws.close(1012, 'service restart'), 20));
     stream = new AriEventStream({ url: `http://127.0.0.1:${port}`, user: 'u', password: 'p', app: 'live-ai', initialDelayMs: 5000 }, log);
