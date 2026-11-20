@@ -1,6 +1,6 @@
 import { createServer, type Server, type Socket } from 'node:net';
 import type { Logger } from '../logger.js';
-import { bytesToUuid, encodeFrame, FrameParser, Kind } from './protocol.js';
+import { bytesToUuid, encodeFrame, FrameParser, Kind, type Frame } from './protocol.js';
 
 /** Receives audio for one registered AudioSocket UUID. */
 export interface AudioSink {
@@ -104,34 +104,10 @@ export class AudioSocketServer {
       for (const f of parser.push(chunk)) {
         if (!sink) {
           clearTimeout(timer);
-          if (f.kind !== Kind.Uuid || f.payload.length !== 16) {
-            this.log.warn({ remote, kind: f.kind }, 'AudioSocket: first frame is not a UUID, closing');
-            socket.destroy();
-            return;
-          }
-          uuid = bytesToUuid(f.payload);
-          sink = this.sinks.get(uuid);
-          if (!sink) {
-            this.log.warn({ remote, uuid }, 'AudioSocket: unknown UUID, closing');
-            socket.destroy();
-            return;
-          }
-          this.sockets.get(uuid)?.destroy();
-          this.sockets.set(uuid, socket);
-          // Don't make Asterisk's first read wait for the next timer tick (see class comment).
-          if (this.keepaliveMs > 0) socket.write(SILENCE_FRAME);
-          this.log.info({ remote, uuid }, 'AudioSocket: stream connected');
-          continue;
-        }
-        if (f.kind === Kind.Audio) sink.onAudio(f.payload);
-        else if (f.kind === Kind.Hangup) {
-          end('hangup');
-          socket.end();
-          return;
-        } else if (f.kind === Kind.Error) {
-          this.log.warn({ uuid, code: f.payload[0] }, 'AudioSocket: error frame');
-          end('error');
-          socket.end();
+          const id = this.identify(socket, remote, f);
+          if (!id) return;
+          ({ uuid, sink } = id);
+        } else if (!this.handleStreamFrame(socket, sink, uuid, f, end)) {
           return;
         }
       }
@@ -142,5 +118,50 @@ export class AudioSocketServer {
       if (uuid && this.sockets.get(uuid) === socket) this.sockets.delete(uuid);
       end('closed');
     });
+  }
+
+  /** Handles a connection's first frame: it must be a known UUID. Returns the stream identity, or undefined after closing the socket. */
+  private identify(socket: Socket, remote: string, f: Frame): { uuid: string; sink: AudioSink } | undefined {
+    if (f.kind !== Kind.Uuid || f.payload.length !== 16) {
+      this.log.warn({ remote, kind: f.kind }, 'AudioSocket: first frame is not a UUID, closing');
+      socket.destroy();
+      return undefined;
+    }
+    const uuid = bytesToUuid(f.payload);
+    const sink = this.sinks.get(uuid);
+    if (!sink) {
+      this.log.warn({ remote, uuid }, 'AudioSocket: unknown UUID, closing');
+      socket.destroy();
+      return undefined;
+    }
+    this.sockets.get(uuid)?.destroy();
+    this.sockets.set(uuid, socket);
+    // Don't make Asterisk's first read wait for the next timer tick (see class comment).
+    if (this.keepaliveMs > 0) socket.write(SILENCE_FRAME);
+    this.log.info({ remote, uuid }, 'AudioSocket: stream connected');
+    return { uuid, sink };
+  }
+
+  /** Handles a frame on an identified stream. Returns false when the stream is over and the rest of the chunk must be ignored. */
+  private handleStreamFrame(
+    socket: Socket,
+    sink: AudioSink,
+    uuid: string | undefined,
+    f: Frame,
+    end: (reason: 'hangup' | 'error' | 'closed') => void,
+  ): boolean {
+    if (f.kind === Kind.Audio) {
+      sink.onAudio(f.payload);
+    } else if (f.kind === Kind.Hangup) {
+      end('hangup');
+      socket.end();
+      return false;
+    } else if (f.kind === Kind.Error) {
+      this.log.warn({ uuid, code: f.payload[0] }, 'AudioSocket: error frame');
+      end('error');
+      socket.end();
+      return false;
+    }
+    return true;
   }
 }
